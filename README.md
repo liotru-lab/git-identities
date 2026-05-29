@@ -4,7 +4,8 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > [!WARNING]
-> **⚠️ Personal tooling — opinionated, use at your own risk.**
+> **Personal opinionated tooling, use at your own risk.**
+>
 > This repo encodes **my** specific multi-account GitHub workflow and personal
 > preferences — it is shared as-is, **not** a general-purpose tool. The aliases,
 > the `main`/`test`/`develop` branch scaffold, the SSH-host naming scheme, the
