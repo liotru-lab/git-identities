@@ -114,12 +114,12 @@ target_host=$(alias_to_host "$alias")
 new_url="$url"
 if [[ "$url" =~ ^git@([^:]+):(.+)$ ]]; then
   current_host="${match[1]}"
-  path="${match[2]}"
-  [[ "$current_host" != "$target_host" ]] && new_url="git@${target_host}:${path}"
+  rpath="${match[2]}"
+  [[ "$current_host" != "$target_host" ]] && new_url="git@${target_host}:${rpath}"
 elif [[ "$url" =~ ^https://([^/]+)/(.+)$ ]]; then
-  path="${match[2]}"
-  [[ "$path" != *.git ]] && path="${path}.git"
-  new_url="git@${target_host}:${path}"
+  rpath="${match[2]}"
+  [[ "$rpath" != *.git ]] && rpath="${rpath}.git"
+  new_url="git@${target_host}:${rpath}"
 fi
 [[ "$new_url" != "$url" ]] && { debug "URL rewritten: $url → $new_url"; args[$url_idx]="$new_url"; }
 

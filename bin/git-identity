@@ -62,17 +62,17 @@ if [[ $no_ignore -eq 0 && -f "$ignore_file" ]]; then
 fi
 
 is_ignored() {
-  local path="$1" pat
+  local repo_path="$1" pat
   for pat in "${IGNORES[@]}"; do
     [[ -z "$pat" ]] && continue
     if [[ "$pat" == *[\*\?\[]* ]]; then
-      case "$path" in
+      case "$repo_path" in
         ${~pat}) return 0 ;;
       esac
     elif [[ "$pat" == */ ]]; then
-      [[ "$path" == "${pat}"* || "$path" == "${pat%/}" ]] && return 0
+      [[ "$repo_path" == "${pat}"* || "$repo_path" == "${pat%/}" ]] && return 0
     else
-      [[ "$path" == "$pat" ]] && return 0
+      [[ "$repo_path" == "$pat" ]] && return 0
     fi
   done
   return 1
@@ -189,18 +189,18 @@ remove_from_ignore_for() {
 }
 
 prompt_mismatch() {
-  local canon_email canon_host path a
+  local canon_email canon_host rpath a
   canon_email=$(alias_to_email "$ID_H_ALIAS")
   canon_host=$(alias_to_host "$ID_E_ALIAS")
-  path=$(echo "$ID_REMOTE" | sed -E 's|^git@[^:]+:||')
+  rpath=$(echo "$ID_REMOTE" | sed -E 's|^git@[^:]+:||')
   echo "Options:"
   echo "  (e) Email → <${ID_H_ALIAS}> canonical: ${canon_email}"
-  echo "  (r) Remote → <${ID_E_ALIAS}> canonical: git@${canon_host}:${path}"
+  echo "  (r) Remote → <${ID_E_ALIAS}> canonical: git@${canon_host}:${rpath}"
   echo "  (s) Skip   (i) Ignore   (q) Quit"
   read -r "a?Choice: "
   case "$a" in
     e|E) run_cmd git config user.email "$canon_email" ;;
-    r|R) run_cmd git remote set-url origin "git@${canon_host}:${path}" ;;
+    r|R) run_cmd git remote set-url origin "git@${canon_host}:${rpath}" ;;
     s|S) ;;
     i|I) add_to_ignore "$(pwd)" ;;
     q|Q) return 2 ;;
@@ -252,16 +252,16 @@ prompt_unknown_host() {
 prompt_https() {
   [[ "$ID_REMOTE" =~ ^https://([^/]+)/(.+)$ ]] || { echo "  cannot parse https URL"; return; }
   local host_https="${match[1]}"
-  local path="${match[2]%.git}"
+  local rpath="${match[2]%.git}"
   local target_host="$host_https"
   local a
   [[ -n "$ID_E_ALIAS" ]] && target_host=$(alias_to_host "$ID_E_ALIAS")
   echo "Options:"
-  echo "  (c) Convert to SSH: git@${target_host}:${path}.git"
+  echo "  (c) Convert to SSH: git@${target_host}:${rpath}.git"
   echo "  (s) Skip   (i) Ignore   (q) Quit"
   read -r "a?Choice: "
   case "$a" in
-    c|C) run_cmd git remote set-url origin "git@${target_host}:${path}.git" ;;
+    c|C) run_cmd git remote set-url origin "git@${target_host}:${rpath}.git" ;;
     s|S) ;;
     i|I) add_to_ignore "$(pwd)" ;;
     q|Q) return 2 ;;
@@ -324,11 +324,11 @@ revisit_ignored() {
 }
 
 sweep_check() {
-  local path="$1"
-  [[ -d "$path" ]] || { echo "not a directory: $path" >&2; return 2; }
+  local sweep_dir="$1"
+  [[ -d "$sweep_dir" ]] || { echo "not a directory: $sweep_dir" >&2; return 2; }
   local total=0 bad=0 ignored=0 repo td tag detail gitpath
   local -a found
-  found=( ${(0)"$(/usr/bin/find "$path" -name .git -prune -print0)"} )
+  found=( ${(0)"$(/usr/bin/find "$sweep_dir" -name .git -prune -print0)"} )
   for gitpath in "${found[@]}"; do
     [[ -z "$gitpath" ]] && continue
     repo="${gitpath:h}"
@@ -362,10 +362,10 @@ sweep_check() {
 }
 
 sweep_fix() {
-  local path="$1"
-  [[ -d "$path" ]] || { echo "not a directory: $path" >&2; return 2; }
+  local sweep_dir="$1"
+  [[ -d "$sweep_dir" ]] || { echo "not a directory: $sweep_dir" >&2; return 2; }
   local -a found repos
-  found=( ${(0)"$(/usr/bin/find "$path" -name .git -prune -print0)"} )
+  found=( ${(0)"$(/usr/bin/find "$sweep_dir" -name .git -prune -print0)"} )
   for gitpath in "${found[@]}"; do
     [[ -z "$gitpath" ]] && continue
     repos+=("${gitpath:h}")
