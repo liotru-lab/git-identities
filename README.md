@@ -1,13 +1,15 @@
 # git-identity
 
-> # ⚠️ PERSONAL TOOLING — OPINIONATED, USE AT YOUR OWN RISK
->
+[![tests](https://github.com/liotru-lab/git-identities/actions/workflows/test.yml/badge.svg)](https://github.com/liotru-lab/git-identities/actions/workflows/test.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+> [!WARNING]
+> **⚠️ Personal tooling — opinionated, use at your own risk.**
 > This repo encodes **my** specific multi-account GitHub workflow and personal
 > preferences — it is shared as-is, **not** a general-purpose tool. The aliases,
 > the `main`/`test`/`develop` branch scaffold, the SSH-host naming scheme, the
 > directory→account conventions, and the entire starship prompt styling all
 > reflect **my own needs and views**. Nothing here is a recommendation.
->
 > **Fork it and adapt it. Do not expect it to fit your setup unchanged.**
 
 Per-repo git identity management for juggling multiple GitHub accounts on one
@@ -20,17 +22,25 @@ machine. It keeps three things in agreement for every repository:
 When those disagree (e.g. you commit as one account but push through another),
 the tooling flags it and offers to fix it.
 
----
+## Contents
+
+- [Concepts](#concepts)
+- [Repo layout](#repo-layout)
+- [Install](#install)
+- [Configuration files](#configuration-files)
+- [Usage](#usage)
+- [Requirements](#requirements)
+- [License](#license)
 
 ## Concepts
 
 An **identity** is a triple, declared once in `identities`:
 
-| field      | meaning                                                        |
-|------------|----------------------------------------------------------------|
-| `alias`    | short label shown in the prompt, e.g. `<liotru>`               |
-| `email`    | the git `user.email` for this account                          |
-| `ssh-host` | a `Host` alias in `~/.ssh/config` that carries the right key   |
+| field      | meaning                                                      |
+| ---------- | ------------------------------------------------------------ |
+| `alias`    | short label shown in the prompt, e.g. `<liotru>`             |
+| `email`    | the git `user.email` for this account                        |
+| `ssh-host` | a `Host` alias in `~/.ssh/config` that carries the right key |
 
 Each `ssh-host` maps to a block in `~/.ssh/config` that pins the SSH key:
 
@@ -45,11 +55,9 @@ Host github-personal
 A repo is **OK** when its `user.email` alias matches its origin host alias.
 Every other situation is a named state (see below).
 
----
-
 ## Repo layout
 
-```
+```text
 .
 ├── install.sh                      deploy into ~/.config + ~/.local/bin
 ├── uninstall.sh                    remove (optionally --purge data)
@@ -75,8 +83,6 @@ between managed markers — your tailored prompt config is never copied here.
 **Data** (`identities`, `profiles`, `ignore`) lives only in
 `~/.config/git-identity/` — your real emails/orgs never enter this repo.
 
----
-
 ## Install
 
 ```sh
@@ -101,6 +107,7 @@ The installer:
   your `format` doesn't reference them or `command_timeout` is unset
 - warns if `~/.local/bin` isn't on your `PATH`
 
+> [!NOTE]
 > Starship has no include mechanism, so the modules must live in your single
 > `starship.toml`. Because of that, two things stay yours to maintain: the
 > `${custom.git_email_*}` lines in your `format`, and `command_timeout = 3000`.
@@ -125,13 +132,11 @@ Uninstall strips only the managed marker block from `starship.toml`; the rest of
 your prompt config is untouched (the `${custom.git_email_*}` lines in your
 `format` are left for you to remove).
 
----
-
 ## Configuration files
 
 ### `identities` — the source of truth
 
-```
+```text
 # alias    email                  ssh-host
 work       you@company.com        github.com
 personal   you@personal.example   github-personal
@@ -142,7 +147,7 @@ Adding an account is a one-line edit here — no script changes. Everything
 
 ### `profiles` — directory → account rules (for `gitclone` / `gitinit`)
 
-```
+```text
 # path-glob               alias      owner
 ~/Projects/clientA/**     work       clientA-org
 ~/Projects/personal/**    personal   my-gh-user
@@ -154,13 +159,11 @@ Matched **top-to-bottom, first match wins** — put the catch-all last.
 
 ### `ignore` — repos to skip during `--sweep`
 
-```
+```text
 ~/Projects/gopath/        # trailing slash: dir + everything below
 **/node_modules/**        # glob: crosses slashes
 ~/Projects/one-repo       # plain: exact path
 ```
-
----
 
 ## Usage
 
@@ -211,15 +214,14 @@ setup), `--no-branches` (just init + email), `--profile <alias>`.
 
 The starship prompt shows the active identity in angle brackets after the branch:
 
-| state    | example            | color  | meaning                                   |
-|----------|--------------------|--------|-------------------------------------------|
-| match    | `<personal>`       | dim    | email and remote host agree               |
-| mismatch | `<work!personal>`  | red    | author≠pusher (`email!host`)              |
-| warn     | `<work!?https>`    | yellow | no remote / unknown email or host / HTTPS |
+| state    | example           | color  | meaning                                   |
+| -------- | ----------------- | ------ | ----------------------------------------- |
+| match    | `<personal>`      | dim    | email and remote host agree               |
+| mismatch | `<work!personal>` | red    | author ≠ pusher (`email!host`)            |
+| warn     | `<work!?https>`   | yellow | no remote / unknown email or host / HTTPS |
+
 
 `GIT_IDENTITY_DEBUG=1` in front of `gitclone`/`gitinit` prints decisions.
-
----
 
 ## Requirements
 
@@ -228,8 +230,6 @@ The starship prompt shows the active identity in angle brackets after the branch
 - **starship** for the prompt integration.
 - A `Host` block in `~/.ssh/config` for every `ssh-host` in `identities`,
   each with its own `IdentityFile` and `IdentitiesOnly yes`.
-
----
 
 ## License
 
