@@ -1,0 +1,34 @@
+# git-identity starship modules
+#
+# These three custom modules render the active identity after the git branch.
+# install.sh merges this block into your ~/.config/starship.toml between managed
+# begin/end marker comments (idempotent — safe to re-run).
+#
+# Starship has NO include mechanism and only renders custom modules that are
+# referenced in `format`, so TWO things in your starship.toml are required and
+# are NOT managed here (install.sh checks them and warns if missing):
+#
+#   1. Reference the modules in your top-level `format`, e.g. after $git_branch:
+#          ${custom.git_email_match}\
+#          ${custom.git_email_mismatch}\
+#          ${custom.git_email_warn}\
+#
+#   2. Give the lookup enough time (the custom command shells out to git):
+#          command_timeout = 3000
+#
+# States:  match -> <alias> dim  |  mismatch -> <eAlias!hAlias> red  |  warn -> yellow
+
+[custom.git_email_match]
+command = "~/.config/git-identity/starship.sh display"
+when    = '[ "$(~/.config/git-identity/starship.sh state)" = "match" ]'
+format  = "[<$output>](dimmed) "
+
+[custom.git_email_mismatch]
+command = "~/.config/git-identity/starship.sh display"
+when    = '[ "$(~/.config/git-identity/starship.sh state)" = "mismatch" ]'
+format  = "[<$output>](bold red) "
+
+[custom.git_email_warn]
+command = "~/.config/git-identity/starship.sh display"
+when    = '[ "$(~/.config/git-identity/starship.sh state)" = "warn" ]'
+format  = "[<$output>](bold yellow) "

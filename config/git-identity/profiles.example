@@ -1,0 +1,18 @@
+# git-identity: directory → profile map  (used by gitclone and gitinit)
+#
+# One rule per line, whitespace-separated:
+#
+#   <path-glob>   <alias>   <owner>
+#
+#   path-glob  matched against $PWD (gitclone) or the target dir (gitinit).
+#              ~ expands to $HOME. ** crosses slashes.
+#   alias      identity alias from `identities`.
+#   owner      GitHub org/user used to build remote URLs in gitinit.
+#
+# Evaluated top-to-bottom; FIRST match wins. Put specific rules above the
+# catch-all. Lines starting with # are ignored.
+#
+# Example (replace with your real project tree):
+#   ~/Projects/clientA/**     work       clientA-org
+#   ~/Projects/personal/**    personal   my-gh-user
+#   ~/Projects/**             work       my-default-owner

@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# JetBrains IDEs
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# git-identity runtime artifacts (these live in ~/.config, never the repo)
+config/git-identity/identities
+config/git-identity/profiles
+config/git-identity/ignore
+config/git-identity/migrate.log

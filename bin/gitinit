@@ -1,0 +1,182 @@
+#!/bin/zsh
+# gitinit — init a repo with the correct identity, branch structure, and remote.
+#
+# Usage:
+#   gitinit [--profile <alias>] [--remote <url>] [--no-remote] [--no-branches]
+#           [git-init-flags...] [directory]
+#
+# Default flow:
+#   1. git init -b main
+#   2. set user.email from alias
+#   3. create README.md with "# <basename>" and commit it
+#   4. create test and develop branches; switch to develop
+#   5. add origin and configure develop to track origin/develop
+#
+# URL resolution for the remote:
+#   --remote URL          → use as-is (with host rewrite by alias)
+#   profile match         → git@<host(alias)>:<owner>/<basename>.git
+#   none + --no-remote    → skip remote setup
+#   none + (no flag)      → error
+#
+# Flags:
+#   --no-branches  skips README/commit/branches/remote (just init + email)
+#   --no-remote    skips only the remote setup (keeps README + branches)
+#
+# GIT_IDENTITY_DEBUG=1 shows what was decided.
+
+set -u
+
+LIB="$HOME/.config/git-identity/lib.sh"
+PROFILES_FILE="$HOME/.config/git-identity/profiles"
+
+[[ -f "$LIB" ]] || { echo "missing $LIB" >&2; exit 2; }
+source "$LIB"
+
+debug() { [[ "${GIT_IDENTITY_DEBUG:-}" == "1" ]] && echo "# gitinit: $*" >&2; return 0 }
+
+match_profile() {
+  pf_alias=""; pf_owner=""
+  [[ -f "$PROFILES_FILE" ]] || return
+  local check_path="$1" line
+  local -a fields
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%\#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+    fields=( ${=line} )
+    local pat="${fields[1]:-}" ali="${fields[2]:-}" own="${fields[3]:-}"
+    pat="${pat/#\~/$HOME}"
+    [[ -z "$pat" || -z "$ali" ]] && continue
+    case "$check_path" in
+      ${~pat}) pf_alias="$ali"; pf_owner="$own"; return ;;
+    esac
+  done < "$PROFILES_FILE"
+}
+
+# ----- Parse flags -----
+forced_alias=""; forced_remote_url=""; no_remote=0; no_branches=0
+typeset -a args
+args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile)      forced_alias="${2:-}"; shift 2 ;;
+    --remote)       forced_remote_url="${2:-}"; shift 2 ;;
+    --no-remote)    no_remote=1; shift ;;
+    --no-branches)  no_branches=1; shift ;;
+    -h|--help)
+      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+
+if [[ -n "$forced_alias" && -z "$(alias_to_host "$forced_alias")" ]]; then
+  echo "gitinit: unknown profile '$forced_alias'" >&2; exit 2
+fi
+
+# ----- Target dir -----
+target_dir=""
+for arg in "${args[@]}"; do
+  case "$arg" in
+    -*) ;;
+    *)  target_dir="$arg" ;;
+  esac
+done
+[[ -z "$target_dir" ]] && target_dir="$(pwd)"
+abs_target="$target_dir"
+case "$abs_target" in
+  /*) ;;
+  *)  abs_target="$(pwd)/$abs_target" ;;
+esac
+
+# ----- Resolve alias + owner -----
+match_profile "$abs_target"
+alias=""; owner=""
+if [[ -n "$forced_alias" ]]; then
+  alias="$forced_alias"
+  [[ "$pf_alias" == "$alias" ]] && owner="$pf_owner"
+else
+  alias="$pf_alias"
+  owner="$pf_owner"
+fi
+debug "alias=$alias owner=$owner"
+
+# ----- Force -b main into init args if not already present -----
+has_b=0
+for arg in "${args[@]}"; do
+  [[ "$arg" == "-b" || "$arg" == "--initial-branch"* ]] && has_b=1
+done
+typeset -a init_args
+if [[ $has_b -eq 0 ]]; then
+  init_args=( -b main "${args[@]}" )
+else
+  init_args=( "${args[@]}" )
+fi
+
+# ----- Run init -----
+debug "git init ${init_args[*]}"
+git init "${init_args[@]}" || exit $?
+
+# ----- Set user.email -----
+canon_email=""
+if [[ -n "$alias" ]]; then
+  canon_email=$(alias_to_email "$alias")
+  if [[ -n "$canon_email" ]] && git -C "$target_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    debug "user.email=$canon_email"
+    git -C "$target_dir" config user.email "$canon_email"
+  fi
+fi
+
+# ----- --no-branches: stop here -----
+if [[ $no_branches -eq 1 ]]; then
+  debug "--no-branches: stopping after init + email"
+  exit 0
+fi
+
+# ----- README + initial commit -----
+repo_name="${abs_target:t}"
+readme="$target_dir/README.md"
+if [[ ! -f "$readme" ]]; then
+  printf '# %s\n\n' "$repo_name" > "$readme"
+  debug "created $readme"
+fi
+git -C "$target_dir" add README.md
+git -C "$target_dir" commit -m "initial commit" >/dev/null
+
+# ----- Branches -----
+git -C "$target_dir" branch test
+git -C "$target_dir" branch develop
+git -C "$target_dir" checkout develop >/dev/null 2>&1
+debug "created branches main, test, develop (on develop)"
+
+# ----- --no-remote: stop here -----
+if [[ $no_remote -eq 1 ]]; then
+  debug "--no-remote: skipping remote setup"
+  exit 0
+fi
+
+# ----- Build URL -----
+remote_url=""
+if [[ -n "$forced_remote_url" ]]; then
+  remote_url="$forced_remote_url"
+  if [[ -n "$alias" ]] && [[ "$remote_url" =~ ^git@([^:]+):(.+)$ ]]; then
+    target_host=$(alias_to_host "$alias")
+    [[ "${match[1]}" != "$target_host" ]] && remote_url="git@${target_host}:${match[2]}"
+  fi
+elif [[ -n "$alias" && -n "$owner" ]]; then
+  remote_url="git@$(alias_to_host "$alias"):${owner}/${repo_name}.git"
+fi
+
+if [[ -z "$remote_url" ]]; then
+  echo "gitinit: cannot determine remote URL (profile gave alias='$alias' owner='$owner'); use --remote URL or --no-remote" >&2
+  exit 2
+fi
+
+# ----- Add origin + set tracking -----
+debug "git remote add origin $remote_url"
+git -C "$target_dir" remote add origin "$remote_url"
+git -C "$target_dir" config branch.develop.remote origin
+git -C "$target_dir" config branch.develop.merge refs/heads/develop
+debug "develop tracks origin/develop"

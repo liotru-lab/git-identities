@@ -1,0 +1,18 @@
+# git-identity: repos to skip during --sweep
+#
+# Pattern forms:
+#   trailing slash   ~/Projects/gopath/     → dir and everything below
+#   glob (* ? [ **)  **/node_modules/**     → glob match across slashes
+#   plain literal    ~/Projects/one-repo    → exact path only
+# ~ expands to $HOME. Lines starting with # are ignored.
+
+# Go module cache (not real repos for identity purposes)
+~/Projects/gopath/
+
+# Vendored .git inside node_modules
+**/node_modules/**
+
+# Abandoned backup repos
+**/*.bkp
+**/*.bak
+**/*.old

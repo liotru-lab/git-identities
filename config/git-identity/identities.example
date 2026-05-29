@@ -1,0 +1,23 @@
+# git-identity: canonical identity map  (THE single source of truth)
+#
+# One identity per line, whitespace-separated:
+#
+#   <alias>   <email>               <ssh-host>
+#
+#   alias     short label shown in the prompt, e.g. <liotru>
+#   email     the git user.email for this identity
+#   ssh-host  the Host alias from ~/.ssh/config carrying this account's key
+#
+# The ssh-host MUST match a Host block in ~/.ssh/config, e.g.:
+#
+#     Host github-personal
+#         HostName github.com
+#         User git
+#         IdentityFile ~/.ssh/id_personal
+#         IdentitiesOnly yes
+#
+# Lines starting with # are ignored. Fill in your own values below.
+#
+# Example (replace with your real accounts):
+#   work       you@company.com        github.com
+#   personal   you@personal.example   github-personal

@@ -1,0 +1,141 @@
+#!/bin/zsh
+# gitclone — clone a repo with the correct git identity applied.
+#
+# Usage:
+#   gitclone [--profile <alias>] <url> [target-dir] [git clone flags...]
+#
+# Alias resolution priority:
+#   1. --profile <alias>
+#   2. URL's SSH host if it's an aliased host (e.g. github-liotru)
+#   3. profiles file matched against $PWD
+#   4. None → passes through to plain git clone
+#
+# When an alias is resolved:
+#   - URL host is rewritten to the alias's canonical host (if needed)
+#   - HTTPS URLs are converted to SSH
+#   - After clone, user.email is set to canonical for the alias
+#
+# GIT_IDENTITY_DEBUG=1 prints what the wrapper decided/did.
+
+set -u
+
+LIB="$HOME/.config/git-identity/lib.sh"
+PROFILES_FILE="$HOME/.config/git-identity/profiles"
+
+[[ -f "$LIB" ]] || { echo "missing $LIB" >&2; exit 2; }
+source "$LIB"
+
+debug() { [[ "${GIT_IDENTITY_DEBUG:-}" == "1" ]] && echo "# gitclone: $*" >&2; return 0 }
+
+usage() {
+  cat <<EOF
+Usage: gitclone [--profile <alias>] <url> [target-dir] [git clone flags...]
+
+Alias resolution priority:
+  1. --profile <alias>
+  2. URL's SSH host if it's an aliased host (e.g. github-liotru)
+  3. profiles file matched against \$PWD
+  4. None → passes through to plain git clone
+
+GIT_IDENTITY_DEBUG=1 shows what was decided.
+EOF
+  exit "${1:-0}"
+}
+
+# Profile lookup: sets pf_alias / pf_owner for a path
+match_profile() {
+  pf_alias=""; pf_owner=""
+  [[ -f "$PROFILES_FILE" ]] || return
+  local check_path="$1" line
+  local -a fields
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%\#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+    fields=( ${=line} )
+    local pat="${fields[1]:-}" ali="${fields[2]:-}" own="${fields[3]:-}"
+    pat="${pat/#\~/$HOME}"
+    [[ -z "$pat" || -z "$ali" ]] && continue
+    case "$check_path" in
+      ${~pat}) pf_alias="$ali"; pf_owner="$own"; return ;;
+    esac
+  done < "$PROFILES_FILE"
+}
+
+# ----- Parse our --profile flag -----
+forced_alias=""
+typeset -a args
+args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile) forced_alias="${2:-}"; shift 2 ;;
+    -h|--help) usage 0 ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+[[ ${#args[@]} -eq 0 ]] && { echo "gitclone: no URL given" >&2; usage 2; }
+if [[ -n "$forced_alias" && -z "$(alias_to_host "$forced_alias")" ]]; then
+  echo "gitclone: unknown profile '$forced_alias'" >&2; exit 2
+fi
+
+# Find URL
+url=""; url_idx=0
+for i in {1..${#args[@]}}; do
+  case "${args[$i]}" in
+    git@*:*|https://*|ssh://*|git://*) url="${args[$i]}"; url_idx=$i; break ;;
+  esac
+done
+[[ -z "$url" ]] && { echo "gitclone: no URL found" >&2; exit 2; }
+
+# Resolve alias
+alias=""
+if [[ -n "$forced_alias" ]]; then
+  alias="$forced_alias"; debug "alias from --profile: $alias"
+else
+  ssh_host=$(parse_remote_host "$url")
+  if [[ -n "$ssh_host" && "$ssh_host" != "github.com" ]]; then
+    derived=$(host_to_alias "$ssh_host")
+    if [[ -n "$derived" ]]; then alias="$derived"; debug "alias from URL host: $alias"; fi
+  fi
+  if [[ -z "$alias" ]]; then
+    match_profile "$(pwd)"
+    [[ -n "$pf_alias" ]] && { alias="$pf_alias"; debug "alias from profile: $alias"; }
+  fi
+fi
+
+if [[ -z "$alias" ]]; then
+  debug "no profile matched — pass-through"
+  exec git clone "${args[@]}"
+fi
+
+# Rewrite URL host if needed
+target_host=$(alias_to_host "$alias")
+new_url="$url"
+if [[ "$url" =~ ^git@([^:]+):(.+)$ ]]; then
+  current_host="${match[1]}"
+  path="${match[2]}"
+  [[ "$current_host" != "$target_host" ]] && new_url="git@${target_host}:${path}"
+elif [[ "$url" =~ ^https://([^/]+)/(.+)$ ]]; then
+  path="${match[2]}"
+  [[ "$path" != *.git ]] && path="${path}.git"
+  new_url="git@${target_host}:${path}"
+fi
+[[ "$new_url" != "$url" ]] && { debug "URL rewritten: $url → $new_url"; args[$url_idx]="$new_url"; }
+
+# Target dir
+target_dir=""
+if (( url_idx + 1 <= ${#args[@]} )); then
+  next="${args[$((url_idx + 1))]}"
+  [[ "$next" != -* ]] && target_dir="$next"
+fi
+[[ -z "$target_dir" ]] && target_dir="${new_url:t:r}"
+
+debug "running: git clone ${args[*]}"
+git clone "${args[@]}" || exit $?
+
+canon_email=$(alias_to_email "$alias")
+if [[ -n "$canon_email" ]] && git -C "$target_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  debug "setting user.email=$canon_email in $target_dir"
+  git -C "$target_dir" config user.email "$canon_email"
+fi
