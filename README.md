@@ -147,9 +147,10 @@ Adding an account is a one-line edit here — no script changes. Everything
 (prompt, sweep, clone, init) reads this table.
 
 The 4th column, **`gh-user`**, is optional: it's the GitHub username as known to
-the [`gh`](https://cli.github.com) CLI, and is only needed by `gitinit --create`
-to pick which authenticated `gh` account creates the remote repo. Three-column
-lines (no `gh-user`) remain valid for every other command.
+the [`gh`](https://cli.github.com) CLI, and is only needed when `gitinit` creates
+the remote repo (its default), to pick which authenticated `gh` account to use.
+Three-column lines (no `gh-user`) remain valid for every other command, and with
+`gitinit --no-create`.
 
 ### `profiles` — directory → account rules (for `gitclone` / `gitinit`)
 
@@ -225,13 +226,34 @@ profile `owner` (falling back to the `gh-user`). This needs the alias to have a
 (`gh auth login`) — the right account is selected per-command, so your global
 `gh` state is left untouched.
 
-Pass **`--no-create`** to stop after the local scaffold (the old default, handy
-when the remote already exists). `--no-remote` and `--no-branches` imply
-`--no-create`.
+#### Stopping early: `--no-create` vs `--no-remote`
+
+These sound similar but stop at different points:
+
+- **`--no-create`** — do the full local scaffold **including adding `origin`**,
+  but don't create the GitHub repo or push. Use it when the remote already
+  exists. Because it still wires up `origin`, it must build a remote URL, so it
+  needs a `profiles` match (for the `owner`) **or** an explicit `--remote URL` —
+  otherwise it errors with *"cannot determine remote URL"*. (Plain `gitinit`
+  with no flags needs this too.)
+- **`--no-remote`** — skip the remote step entirely: no `origin`, no creation,
+  no push. Nothing to resolve, so it works anywhere (e.g. a throwaway repo in
+  `/tmp`). Reach for this when you don't want a remote at all.
+
+`--no-remote` and `--no-branches` both imply `--no-create` (you can't push
+without a remote or commits).
+
+```sh
+gitinit my-thing                       # create on GitHub + push (needs owner)
+gitinit --no-create my-thing           # local + origin, no GitHub  (needs owner)
+gitinit --no-create --remote URL dir   # ...supply the owner/URL explicitly
+gitinit --no-remote /tmp/scratch       # local only, no origin      (works anywhere)
+```
 
 Flags: `--no-create` (skip GitHub repo creation + push), `--remote URL`
-(override the built URL), `--no-remote` (skip remote setup), `--no-branches`
-(just init + email), `--public` (create a public repo), `--profile <alias>`.
+(override the built URL), `--no-remote` (skip remote setup entirely),
+`--no-branches` (just init + email), `--public` (create a public repo),
+`--profile <alias>`.
 
 ### Prompt
 
