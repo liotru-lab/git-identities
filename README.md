@@ -65,7 +65,8 @@ Every other situation is a named state (see below).
 ├── bin/                            → ~/.local/bin/
 │   ├── git-identity                check / sweep / interactively fix repos
 │   ├── gitclone                    clone with the right identity applied
-│   └── gitinit                     init with identity + branch + remote scaffold
+│   ├── gitinit                     init with identity + branch + remote scaffold
+│   └── git-identity-doctor         verify install + config (run after install)
 └── config/
     ├── starship/
     │   └── git-identity.toml        the 3 prompt modules, MERGED into
@@ -254,6 +255,35 @@ Flags: `--no-create` (skip GitHub repo creation + push), `--remote URL`
 (override the built URL), `--no-remote` (skip remote setup entirely),
 `--no-branches` (just init + email), `--public` (create a public repo),
 `--profile <alias>`.
+
+### `git-identity-doctor` — verify your setup
+
+Run after `install.sh` (or any time things look off) to sanity-check the
+installation and configuration:
+
+```sh
+git-identity-doctor              # offline checks
+git-identity-doctor --auth       # also test SSH auth + show each gh token's scopes
+git-identity-doctor --init-test  # end-to-end: really create + push + delete a repo
+```
+
+It checks that the executables are on your `PATH`, the config files exist, the
+`identities` table parses (flagging malformed lines and duplicates), every
+`ssh-host` has a matching `Host` block in `~/.ssh/config`, `profiles` rules
+reference known aliases, and `gh` is installed with each `gh-user` authenticated.
+
+With **`--auth`** it additionally opens SSH connections per host and prints each
+account's actual `gh` token scopes (failing if the `repo` scope `gitinit` needs
+is missing, noting when `delete_repo` is absent).
+
+With **`--init-test`** (implies `--auth`) it runs the real thing end-to-end:
+`gitinit` creates a throwaway **private** repo on GitHub, pushes all three
+branches, then deletes it — so it genuinely fails if `gh` permissions are wrong.
+Deleting the test repo needs the `delete_repo` scope
+(`gh auth refresh -h github.com -s delete_repo`); without it the test still
+creates + pushes but reports the repo for manual deletion.
+
+Exit status is non-zero if any check fails, so it works in scripts too.
 
 ### Prompt
 

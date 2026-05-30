@@ -114,7 +114,7 @@ print "Installing git-identity toolkit from: $REPO"
 print
 
 # --- executables -> ~/.local/bin ---
-for f in git-identity gitclone gitinit; do
+for f in git-identity gitclone gitinit git-identity-doctor; do
   deploy "$REPO/bin/$f" "$BIN_DST/$f"
   chmod +x "$BIN_DST/$f"
 done

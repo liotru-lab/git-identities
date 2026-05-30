@@ -1,0 +1,303 @@
+#!/bin/zsh
+# git-identity-doctor — verify a git-identity installation and configuration.
+#
+# Usage:
+#   git-identity-doctor              offline checks (files, identities, ssh, profiles)
+#   git-identity-doctor --auth       also test SSH auth + show each gh token's scopes
+#   git-identity-doctor --init-test  end-to-end: gitinit actually creates a throwaway
+#                                     private repo on GitHub and pushes, then deletes
+#                                     it (proves gh permissions for real). Implies
+#                                     --auth. Needs the repo + delete_repo gh scopes.
+#   git-identity-doctor -h           this help
+#
+# Exit status: 0 if no failures, 1 if any check FAILED (warnings don't fail).
+
+set -u
+setopt extended_glob null_glob
+
+CFG_DST="$HOME/.config/git-identity"
+LIB="$CFG_DST/lib.sh"
+IDENTITIES_FILE="$CFG_DST/identities"
+PROFILES_FILE="$CFG_DST/profiles"
+IGNORE_FILE="$CFG_DST/ignore"
+SSH_CONFIG="$HOME/.ssh/config"
+BIN_DST="$HOME/.local/bin"
+
+do_auth=0
+do_init_test=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --auth)      do_auth=1; shift ;;
+    --init-test) do_init_test=1; do_auth=1; shift ;;  # the real e2e test implies --auth
+    -h|--help)   sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "git-identity-doctor: unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+# ----- output helpers (color only on a tty) -----
+if [[ -t 1 ]]; then
+  C_OK=$'\e[32m'; C_WARN=$'\e[33m'; C_FAIL=$'\e[31m'; C_DIM=$'\e[2m'; C_RST=$'\e[0m'
+else
+  C_OK=""; C_WARN=""; C_FAIL=""; C_DIM=""; C_RST=""
+fi
+
+integer FAILS=0 WARNS=0 OKS=0
+# NB: each helper ends with `return 0`. Without it the trailing `(( X++ ))`
+# returns the pre-increment value, which is falsy when the counter was 0 — and
+# that false return would wrongly trigger the `|| fail` in `... && ok || fail`.
+ok()   { print -r -- "  ${C_OK}✓${C_RST} $1"; (( OKS++ ));   return 0 }
+warn() { print -r -- "  ${C_WARN}⚠${C_RST} $1"; (( WARNS++ )); return 0 }
+fail() { print -r -- "  ${C_FAIL}✗${C_RST} $1"; (( FAILS++ )); return 0 }
+note() { print -r -- "    ${C_DIM}$1${C_RST}"; return 0 }
+section() { print -r -- ""; print -r -- "$1" }
+
+# ============================================================
+section "Executables (${BIN_DST})"
+for f in git-identity gitclone gitinit git-identity-doctor; do
+  resolved=$(command -v "$f" 2>/dev/null)
+  if [[ -z "$resolved" ]]; then
+    fail "$f not found on PATH"
+  elif [[ "$resolved" != "$BIN_DST/$f" ]]; then
+    warn "$f resolves to $resolved (not $BIN_DST/$f)"
+  elif [[ -x "$resolved" ]]; then
+    ok "$f"
+  else
+    fail "$f present but not executable"
+  fi
+done
+case ":$PATH:" in
+  *":$BIN_DST:"*) ;;
+  *) warn "$BIN_DST is not on your PATH" ;;
+esac
+
+# ============================================================
+section "Config files (${CFG_DST})"
+if [[ -f "$LIB" ]]; then ok "lib.sh"; else fail "lib.sh missing — re-run install.sh"; fi
+if [[ -f "$IDENTITIES_FILE" ]]; then ok "identities"; else fail "identities missing"; fi
+if [[ -f "$PROFILES_FILE" ]]; then ok "profiles"; else warn "profiles missing (gitclone/gitinit profile matching disabled)"; fi
+if [[ -f "$IGNORE_FILE" ]]; then ok "ignore"; else note "ignore not present (optional; --sweep skips nothing)"; fi
+
+# Need the loader for everything below.
+if [[ ! -f "$LIB" || ! -f "$IDENTITIES_FILE" ]]; then
+  section "Summary"
+  print -r -- "  ${C_FAIL}${FAILS} failed${C_RST}, ${WARNS} warnings, ${OKS} ok — cannot continue without lib.sh + identities"
+  exit 1
+fi
+source "$LIB"
+_load_identities
+
+# ============================================================
+section "Identities table"
+if [[ ${#ALIASES_ORDERED[@]} -eq 0 ]]; then
+  fail "no identities defined (fill in $IDENTITIES_FILE)"
+else
+  ok "${#ALIASES_ORDERED[@]} identit$([[ ${#ALIASES_ORDERED[@]} -eq 1 ]] && echo y || echo ies): ${ALIASES_ORDERED[*]}"
+fi
+
+# Re-scan the raw file for malformed lines and duplicates (the loader silently
+# skips bad rows, so we report them explicitly here).
+typeset -A seen_alias seen_email seen_host
+integer lineno=0
+while IFS= read -r line || [[ -n "$line" ]]; do
+  (( lineno++ ))
+  stripped="${line%%\#*}"
+  stripped="${stripped##[[:space:]]##}"
+  stripped="${stripped%%[[:space:]]##}"
+  [[ -z "$stripped" ]] && continue
+  fields=( ${=stripped} )
+  if [[ ${#fields[@]} -lt 3 ]]; then
+    fail "line $lineno: needs at least <alias> <email> <ssh-host> — got '${stripped}'"
+    continue
+  fi
+  a="${fields[1]}" e="${fields[2]}" hst="${fields[3]}" gu="${fields[4]:-}"
+  [[ -n "${seen_alias[$a]:-}" ]] && warn "duplicate alias '$a' (line $lineno overrides earlier)"
+  [[ -n "${seen_email[$e]:-}" ]] && warn "duplicate email '$e' shared by aliases (mapping is ambiguous)"
+  [[ -n "${seen_host[$hst]:-}" ]] && warn "duplicate ssh-host '$hst' shared by aliases (mapping is ambiguous)"
+  seen_alias[$a]=1 seen_email[$e]=1 seen_host[$hst]=1
+  [[ "$e" == *@*.* ]] || warn "alias '$a': email '$e' doesn't look like an address"
+  [[ -z "$gu" ]] && note "alias '$a': no gh-user (4th column) — gitinit will need --no-create for it"
+done < "$IDENTITIES_FILE"
+
+# ============================================================
+section "SSH host blocks (~/.ssh/config)"
+if [[ ! -f "$SSH_CONFIG" ]]; then
+  warn "$SSH_CONFIG not found — SSH pushes/clones may use defaults only"
+fi
+for a in "${ALIASES_ORDERED[@]}"; do
+  hst="${ALIAS_TO_HOST[$a]}"
+  if [[ "$hst" == "github.com" || "$hst" == "gitlab.com" || "$hst" == "bitbucket.org" ]]; then
+    note "alias '$a' uses default host '$hst' (no Host alias needed)"
+    continue
+  fi
+  if [[ -f "$SSH_CONFIG" ]] && grep -qiE "^[[:space:]]*Host([[:space:]].*)?[[:space:]]${hst}([[:space:]]|\$)" "$SSH_CONFIG"; then
+    ok "alias '$a' → Host '$hst' present in ssh config"
+  else
+    fail "alias '$a' → no 'Host $hst' block in $SSH_CONFIG (clone/push as '$a' will fail)"
+  fi
+done
+
+# ============================================================
+section "Profiles"
+if [[ -f "$PROFILES_FILE" ]]; then
+  integer pln=0 prules=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    (( pln++ ))
+    stripped="${line%%\#*}"
+    stripped="${stripped##[[:space:]]##}"
+    stripped="${stripped%%[[:space:]]##}"
+    [[ -z "$stripped" ]] && continue
+    fields=( ${=stripped} )
+    pat="${fields[1]:-}" pali="${fields[2]:-}" pown="${fields[3]:-}"
+    if [[ -z "$pat" || -z "$pali" ]]; then
+      fail "profiles line $pln: needs <pattern> <alias> [owner]"
+      continue
+    fi
+    (( prules++ ))
+    if [[ -z "${ALIAS_TO_HOST[$pali]:-}" ]]; then
+      fail "profiles line $pln: alias '$pali' is not in identities"
+    elif [[ -z "$pown" ]]; then
+      note "rule '$pat' → '$pali' has no owner (gitinit needs --remote or --no-create here)"
+    fi
+  done < "$PROFILES_FILE"
+  (( prules > 0 )) && ok "$prules profile rule$([[ $prules -eq 1 ]] || echo s) reference known aliases"
+fi
+
+# ============================================================
+section "gh CLI (for gitinit repo creation)"
+if ! command -v gh >/dev/null 2>&1; then
+  warn "gh not installed — gitinit can only run with --no-create (https://cli.github.com)"
+else
+  ok "gh installed ($(gh --version 2>/dev/null | head -1))"
+  for a in "${ALIASES_ORDERED[@]}"; do
+    gu="$(alias_to_ghuser "$a")"
+    [[ -z "$gu" ]] && continue
+    if gh auth token -u "$gu" >/dev/null 2>&1; then
+      ok "alias '$a' → gh account '$gu' authenticated"
+    else
+      warn "alias '$a' → gh account '$gu' NOT authenticated (run: gh auth login) — gitinit needs --no-create for it"
+    fi
+  done
+fi
+
+# ============================================================
+if (( do_auth )); then
+  section "SSH auth (network)"
+  for a in "${ALIASES_ORDERED[@]}"; do
+    hst="${ALIAS_TO_HOST[$a]}"
+    printf '  testing %s (%s)... ' "$a" "$hst"
+    if ssh -T -o BatchMode=yes -o ConnectTimeout=5 "git@${hst}" 2>&1 | grep -qi "successfully authenticated\|You've successfully"; then
+      print -r -- "${C_OK}✓${C_RST}"; (( OKS++ ))
+    else
+      print -r -- "${C_FAIL}✗${C_RST}"; (( FAILS++ ))
+      note "ssh git@${hst} did not authenticate"
+    fi
+  done
+
+  # ---- gh token scopes (network): show each account's ACTUAL granted scopes ----
+  # 'repo' is all that gitinit's default create + clone need, so that's the pass
+  # criterion. (delete_repo is only relevant to --init-test cleanup, checked there.)
+  if command -v gh >/dev/null 2>&1; then
+    section "gh token scopes (network)"
+    for a in "${ALIASES_ORDERED[@]}"; do
+      gu="$(alias_to_ghuser "$a")"
+      [[ -z "$gu" ]] && continue
+      if ! tok=$(gh auth token -u "$gu" 2>/dev/null) || [[ -z "$tok" ]]; then
+        warn "alias '$a' → '$gu' not authenticated; skipping scope check"
+        continue
+      fi
+      scopes=$(GH_TOKEN="$tok" gh api -i user 2>/dev/null \
+               | grep -i '^x-oauth-scopes:' | sed 's/^[^:]*://; s/^[[:space:]]*//; s/[[:space:]]*$//')
+      [[ -z "$scopes" ]] && scopes="(none reported)"
+      if [[ ",${scopes// /}," == *,repo,* ]]; then
+        ok "alias '$a' → '$gu' scopes: ${scopes}"
+      else
+        fail "alias '$a' → '$gu' lacks 'repo' scope (gitinit create will fail). scopes: ${scopes}"
+        note "fix: gh auth refresh -h github.com -s repo"
+      fi
+    done
+  fi
+else
+  note ""
+  note "(run with --auth to also test SSH auth + show gh token scopes)"
+fi
+
+# ============================================================
+# End-to-end init test: actually create a private repo on GitHub via gitinit and
+# push, then delete it. This genuinely fails if gh permissions are wrong. Opt-in
+# (--init-test) because it has real side effects on GitHub.
+if (( do_init_test )); then
+  section "End-to-end gitinit test (creates a real private repo; deletes it if able)"
+  if ! command -v gh >/dev/null 2>&1; then
+    fail "gh not installed — cannot run --init-test"
+  elif ! command -v gitinit >/dev/null 2>&1; then
+    fail "gitinit not on PATH — cannot run --init-test"
+  else
+    # Pick the first alias that has a gh-user.
+    et_alias=""; et_ghuser=""
+    for a in "${ALIASES_ORDERED[@]}"; do
+      gu="$(alias_to_ghuser "$a")"
+      [[ -n "$gu" ]] && { et_alias="$a"; et_ghuser="$gu"; break; }
+    done
+    if [[ -z "$et_alias" ]]; then
+      fail "no alias has a gh-user (4th identities column) — cannot run --init-test"
+    else
+      # Unique-ish throwaway name. No Date/random available portably; use $$ + epoch.
+      et_name="gitid-doctor-test-$$-$(date +%s 2>/dev/null || echo x)"
+      et_owner="$et_ghuser"            # create under the account's own namespace
+      et_repo="${et_owner}/${et_name}"
+      et_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-identity-doctor.XXXXXX")
+      note "using alias '$et_alias' (gh '$et_ghuser') → ${et_repo}"
+
+      # Does this account's token allow deleting the repo afterwards? If not, we
+      # still run the create+push test (that's what --init-test verifies) but
+      # warn up front that the throwaway repo will be left for manual cleanup.
+      et_tok=$(gh auth token -u "$et_ghuser" 2>/dev/null)
+      et_scopes=$(GH_TOKEN="$et_tok" gh api -i user 2>/dev/null \
+                  | grep -i '^x-oauth-scopes:' | sed 's/^[^:]*://; s/[[:space:]]//g')
+      et_can_delete=0
+      if [[ ",${et_scopes}," == *,delete_repo,* ]]; then
+        et_can_delete=1
+      else
+        warn "'$et_ghuser' lacks delete_repo — the test repo will be CREATED but NOT auto-removed"
+        note "to enable auto-cleanup: gh auth refresh -h github.com -s delete_repo"
+      fi
+
+      # gitinit with an explicit --remote so it doesn't depend on a profile owner.
+      et_host="${ALIAS_TO_HOST[$et_alias]}"
+      et_url="git@${et_host}:${et_repo}.git"
+      if gitinit --profile "$et_alias" --remote "$et_url" "$et_dir/$et_name" >/dev/null 2>&1; then
+        # Verify the remote really has our branches.
+        et_branches=$(GH_TOKEN="$et_tok" gh api "repos/${et_repo}/branches" -q '.[].name' 2>/dev/null | sort | tr '\n' ' ')
+        if [[ "$et_branches" == *develop* && "$et_branches" == *main* && "$et_branches" == *test* ]]; then
+          ok "gitinit created ${et_repo} and pushed branches: ${et_branches}"
+        else
+          fail "repo created but expected branches missing (got: ${et_branches:-none})"
+        fi
+        # Clean up the GitHub repo — only attempt it if the scope is present.
+        if (( et_can_delete )); then
+          if GH_TOKEN="$et_tok" gh repo delete "$et_repo" --yes >/dev/null 2>&1; then
+            ok "deleted test repo ${et_repo}"
+          else
+            fail "delete failed despite delete_repo scope — remove manually: gh repo delete ${et_repo} --yes"
+          fi
+        else
+          warn "test repo left on GitHub (no delete_repo scope): ${et_repo}"
+          note "remove it with: gh repo delete ${et_repo} --yes"
+        fi
+      else
+        fail "gitinit failed to create/push ${et_repo} (check gh 'repo' scope for '$et_ghuser')"
+      fi
+      rm -rf "$et_dir"
+    fi
+  fi
+fi
+
+# ============================================================
+section "Summary"
+if (( FAILS == 0 )); then
+  print -r -- "  ${C_OK}All good${C_RST} — ${OKS} ok, ${WARNS} warning$([[ $WARNS -eq 1 ]] || echo s)"
+  exit 0
+else
+  print -r -- "  ${C_FAIL}${FAILS} failed${C_RST}, ${WARNS} warning$([[ $WARNS -eq 1 ]] || echo s), ${OKS} ok"
+  exit 1
+fi
