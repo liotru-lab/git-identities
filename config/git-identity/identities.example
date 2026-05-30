@@ -2,11 +2,14 @@
 #
 # One identity per line, whitespace-separated:
 #
-#   <alias>   <email>               <ssh-host>
+#   <alias>   <email>               <ssh-host>        [gh-user]
 #
 #   alias     short label shown in the prompt, e.g. <liotru>
 #   email     the git user.email for this identity
 #   ssh-host  the Host alias from ~/.ssh/config carrying this account's key
+#   gh-user   (optional) the GitHub username for this account, as known to the
+#             `gh` CLI. Only required for `gitinit --create`, which uses it to
+#             pick the authenticated gh account that creates the remote repo.
 #
 # The ssh-host MUST match a Host block in ~/.ssh/config, e.g.:
 #
@@ -19,5 +22,5 @@
 # Lines starting with # are ignored. Fill in your own values below.
 #
 # Example (replace with your real accounts):
-#   work       you@company.com        github.com
-#   personal   you@personal.example   github-personal
+#   work       you@company.com        github.com        your-work-username
+#   personal   you@personal.example   github-personal   your-personal-username

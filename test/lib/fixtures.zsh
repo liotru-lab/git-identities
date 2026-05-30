@@ -35,9 +35,9 @@ make_home() {
   cp "$REPO/config/git-identity/lib.sh" "$h/.config/git-identity/lib.sh"
 
   cat > "$h/.config/git-identity/identities" <<'IDS'
-# alias   email                ssh-host
-acme      dev@acme.test        ssh-acme
-globex    dev@globex.test      ssh-globex
+# alias   email                ssh-host     gh-user
+acme      dev@acme.test        ssh-acme     gh-acme
+globex    dev@globex.test      ssh-globex   gh-globex
 IDS
 
   # Isolated git config: a name so commits work, no global user.email so repos
@@ -92,4 +92,42 @@ mkrepo() {
   git init -q "$dir"
   [[ -n "$email" ]]  && git -C "$dir" config user.email "$email"
   [[ -n "$remote" ]] && git -C "$dir" remote add origin "$remote"
+}
+
+# make_gh_stub <bindir> [authed-users]
+# Installs a fake `gh` at <bindir>/gh (prepend <bindir> to PATH to use it) so
+# gitinit --create can run with no network. The stub:
+#   - `gh auth token -u <user>`  → prints a fake token and exits 0 if <user> is
+#                                  in authed-users (default "gh-acme gh-globex"),
+#                                  else exits 1 (simulates "not authenticated").
+#   - `gh repo create <args>`    → appends its full argv to <bindir>/gh-calls.log
+#                                  and exits 0 (no real repo is created).
+#   - anything else              → exits 0.
+# Tests read gh-calls.log to assert what gitinit asked gh to do.
+make_gh_stub() {
+  local bindir="$1" authed="${2:-gh-acme gh-globex}"
+  mkdir -p "$bindir"
+  cat > "$bindir/gh" <<STUB
+#!/bin/zsh
+log="$bindir/gh-calls.log"
+case "\$1 \$2" in
+  "auth token")
+    user=""
+    while [[ \$# -gt 0 ]]; do
+      [[ "\$1" == "-u" || "\$1" == "--user" ]] && { user="\$2"; shift 2; continue; }
+      shift
+    done
+    for a in ${authed}; do
+      [[ "\$a" == "\$user" ]] && { print -r -- "ghtoken-\$user"; exit 0; }
+    done
+    exit 1
+    ;;
+  "repo create")
+    print -r -- "gh \$*" >> "\$log"
+    exit 0
+    ;;
+esac
+exit 0
+STUB
+  chmod +x "$bindir/gh"
 }

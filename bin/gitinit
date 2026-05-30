@@ -1,8 +1,10 @@
 #!/bin/zsh
-# gitinit — init a repo with the correct identity, branch structure, and remote.
+# gitinit — init a new repo with the correct identity, branches, and remote,
+#           then create it on GitHub and push. (Use gitclone for existing repos.)
 #
 # Usage:
-#   gitinit [--profile <alias>] [--remote <url>] [--no-remote] [--no-branches]
+#   gitinit [--profile <alias>] [--remote <url>] [--public]
+#           [--no-create] [--no-remote] [--no-branches]
 #           [git-init-flags...] [directory]
 #
 # Default flow:
@@ -11,6 +13,12 @@
 #   3. create README.md with "# <basename>" and commit it
 #   4. create test and develop branches; switch to develop
 #   5. add origin and configure develop to track origin/develop
+#   6. create the GitHub repo (via gh) and push develop, main, test
+#
+# Creating the GitHub repo (step 6, on by default) needs a gh-user (4th
+# identities column) for the alias and that account authenticated in gh. The
+# repo is created under the profile owner (falling back to gh-user), private
+# unless --public.
 #
 # URL resolution for the remote:
 #   --remote URL          → use as-is (with host rewrite by alias)
@@ -19,8 +27,11 @@
 #   none + (no flag)      → error
 #
 # Flags:
-#   --no-branches  skips README/commit/branches/remote (just init + email)
-#   --no-remote    skips only the remote setup (keeps README + branches)
+#   --no-create    do everything locally (incl. origin) but DON'T create the
+#                  GitHub repo or push — the old default for an existing remote
+#   --no-remote    skip remote setup entirely (no origin; implies --no-create)
+#   --no-branches  just init + email (implies --no-create)
+#   --public       make the created repo public (default: private)
 #
 # GIT_IDENTITY_DEBUG=1 shows what was decided.
 
@@ -55,7 +66,9 @@ match_profile() {
 }
 
 # ----- Parse flags -----
+# create defaults ON: gitinit is for NEW repos (use gitclone for existing ones).
 forced_alias=""; forced_remote_url=""; no_remote=0; no_branches=0
+create=1; public=0; no_create=0
 typeset -a args
 args=()
 while [[ $# -gt 0 ]]; do
@@ -64,8 +77,10 @@ while [[ $# -gt 0 ]]; do
     --remote)       forced_remote_url="${2:-}"; shift 2 ;;
     --no-remote)    no_remote=1; shift ;;
     --no-branches)  no_branches=1; shift ;;
+    --no-create)    no_create=1; shift ;;
+    --public)       public=1; shift ;;
     -h|--help)
-      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) args+=("$1"); shift ;;
@@ -74,6 +89,20 @@ done
 
 if [[ -n "$forced_alias" && -z "$(alias_to_host "$forced_alias")" ]]; then
   echo "gitinit: unknown profile '$forced_alias'" >&2; exit 2
+fi
+
+# Creating the GitHub repo requires an origin to push to and commits to push, so
+# --no-create / --no-remote / --no-branches all turn it off.
+[[ $no_create -eq 1 || $no_remote -eq 1 || $no_branches -eq 1 ]] && create=0
+
+if [[ $public -eq 1 && $create -eq 0 ]]; then
+  echo "gitinit: --public has no effect without creating a repo (dropped by --no-create/--no-remote/--no-branches)" >&2
+  exit 2
+fi
+
+if [[ $create -eq 1 ]] && ! command -v gh >/dev/null 2>&1; then
+  echo "gitinit: creating the GitHub repo needs the gh CLI (https://cli.github.com); install it or pass --no-create" >&2
+  exit 2
 fi
 
 # ----- Target dir -----
@@ -180,3 +209,45 @@ git -C "$target_dir" remote add origin "$remote_url"
 git -C "$target_dir" config branch.develop.remote origin
 git -C "$target_dir" config branch.develop.merge refs/heads/develop
 debug "develop tracks origin/develop"
+
+# ----- Create the GitHub repo and push (default; disable with --no-create) -----
+if [[ $create -eq 1 ]]; then
+  if [[ -z "$alias" ]]; then
+    echo "gitinit: creating a repo needs an identity alias (use --profile or a profiles match, or pass --no-create)" >&2
+    exit 2
+  fi
+  ghuser=$(alias_to_ghuser "$alias")
+  if [[ -z "$ghuser" ]]; then
+    echo "gitinit: alias '$alias' has no gh-user (4th identities column) to create the repo with; add it or pass --no-create" >&2
+    exit 2
+  fi
+
+  # gh auth token -u fails (non-zero) when that account isn't logged in — this
+  # doubles as the auth check. We pass the token per-command via GH_TOKEN so gh
+  # is never switched globally.
+  gh_token=""
+  if ! gh_token=$(gh auth token -u "$ghuser" 2>/dev/null) || [[ -z "$gh_token" ]]; then
+    echo "gitinit: gh account '$ghuser' is not authenticated; run: gh auth login" >&2
+    exit 2
+  fi
+
+  # Create under the profile owner; fall back to the gh-user's own namespace.
+  create_owner="${owner:-$ghuser}"
+  visibility="--private"
+  [[ $public -eq 1 ]] && visibility="--public"
+
+  debug "gh repo create ${create_owner}/${repo_name} $visibility (as $ghuser)"
+  if ! GH_TOKEN="$gh_token" gh repo create "${create_owner}/${repo_name}" $visibility; then
+    echo "gitinit: gh repo create failed; the local repo is intact at $target_dir." >&2
+    echo "         fix the issue, then push with: git -C $target_dir push -u origin develop main test" >&2
+    exit 1
+  fi
+
+  debug "git push -u origin develop main test"
+  if ! git -C "$target_dir" push -u origin develop main test; then
+    echo "gitinit: push failed; the remote was created. Retry with:" >&2
+    echo "         git -C $target_dir push -u origin develop main test" >&2
+    exit 1
+  fi
+  debug "created and pushed ${create_owner}/${repo_name}"
+fi

@@ -20,6 +20,20 @@
   assert_empty "unknown email → empty" "$(email_to_alias nobody@nowhere.test)"
   assert_empty "unknown alias → empty" "$(alias_to_host ghost)"
 
+  describe "lib: alias_to_ghuser (optional 4th column)"
+  assert_eq  "alias_to_ghuser acme"   "gh-acme"   "$(alias_to_ghuser acme)"
+  assert_eq  "alias_to_ghuser globex" "gh-globex" "$(alias_to_ghuser globex)"
+  assert_empty "unknown alias → empty" "$(alias_to_ghuser ghost)"
+
+  describe "lib: 3-column identities still load (gh-user optional)"
+  local legacy="$h/.config/git-identity/identities-legacy"
+  print -r -- "solo  dev@solo.test  ssh-solo" > "$legacy"
+  IDENTITIES_FILE="$legacy" _load_identities
+  assert_eq  "alias loaded without gh-user"  "ssh-solo" "$(alias_to_host solo)"
+  assert_empty "missing gh-user → empty"     "$(alias_to_ghuser solo)"
+  # reload the standard fixture for any later assertions
+  IDENTITIES_FILE="$h/.config/git-identity/identities" _load_identities
+
   describe "lib: parse_remote_host"
   assert_eq  "ssh url host"         "ssh-acme"   "$(parse_remote_host git@ssh-acme:owner/repo.git)"
   assert_eq  "plain github host"    "github.com" "$(parse_remote_host git@github.com:o/r.git)"

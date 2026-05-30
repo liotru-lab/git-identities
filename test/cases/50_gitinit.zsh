@@ -1,6 +1,9 @@
-# Integration: gitinit identity + branch scaffolding + remote URL building.
-# No pushing occurs, so remotes need not exist; we assert on local config.
+# Integration: gitinit identity + branch scaffolding + remote URL building, plus
+# the default GitHub repo creation + push (stubbed gh, no network).
 # All identity values are synthetic (see test/lib/fixtures.zsh).
+#
+# NOTE: gitinit creates + pushes by DEFAULT. The local-only tests below pass
+# --no-create so they never invoke gh / touch the network.
 
 () {
   local h; h=$(make_home)
@@ -19,9 +22,9 @@ PRO
   assert_no_file "no README committed" "$d1/proj/README.md"
   assert_empty "no origin remote" "$(git -C "$d1/proj" remote 2>/dev/null)"
 
-  describe "gitinit: full flow with --remote host-rewrite"
+  describe "gitinit: --no-create full local flow with --remote host-rewrite"
   local d2; d2=$(_mktemp_dir)
-  ( zsh "$gi" --profile acme --remote git@ssh-globex:acme-org/proj.git "$d2/proj" >/dev/null 2>&1 )
+  ( zsh "$gi" --profile acme --no-create --remote git@ssh-globex:acme-org/proj.git "$d2/proj" >/dev/null 2>&1 )
   assert_file "README created"  "$d2/proj/README.md"
   assert_eq "main branch made"    "main"    "$(git -C "$d2/proj" branch --list main --format='%(refname:short)')"
   assert_eq "test branch made"    "test"    "$(git -C "$d2/proj" branch --list test --format='%(refname:short)')"
@@ -31,14 +34,88 @@ PRO
     "$(git -C "$d2/proj" remote get-url origin)"
   assert_eq "develop tracks origin" "origin" "$(git -C "$d2/proj" config branch.develop.remote)"
 
-  describe "gitinit: remote built from profile owner + alias"
+  describe "gitinit: --no-create remote built from profile owner + alias"
   mkdir -p "$h/code"
-  ( cd "$h/code" && zsh "$gi" myrepo >/dev/null 2>&1 )
+  ( cd "$h/code" && zsh "$gi" --no-create myrepo >/dev/null 2>&1 )
   assert_eq "URL from profile" "git@ssh-acme:acme-org/myrepo.git" \
     "$(git -C "$h/code/myrepo" remote get-url origin 2>/dev/null)"
 
   describe "gitinit: error when remote undeterminable"
   local d3; d3=$(_mktemp_dir)
   assert_status "no alias/owner + no --remote/--no-remote → exit 2" 2 \
-    zsh "$gi" "$d3/proj"
+    zsh "$gi" --no-create "$d3/proj"
+
+  # --- Default behavior: create the GitHub repo + push, with a stubbed gh and a
+  #     local bare repo standing in for the remote (no network). ---
+  local remotes; remotes=$(_mktemp_dir)
+  add_local_remotes "$h" "$remotes"
+  local stub; stub=$(_mktemp_dir)/bin
+  make_gh_stub "$stub"            # gh-acme + gh-globex are "authenticated"
+
+  describe "gitinit: --public requires creation (errors with --no-create)"
+  assert_status "--public + --no-create → exit 2" 2 \
+    env PATH="$stub:$PATH" zsh "$gi" --profile acme --public --no-create "$(_mktemp_dir)/p"
+  assert_status "--public + --no-remote → exit 2" 2 \
+    env PATH="$stub:$PATH" zsh "$gi" --profile acme --public --no-remote "$(_mktemp_dir)/p"
+
+  describe "gitinit: missing gh-user for alias → exit 2"
+  # Identities without a 4th column: default create can't resolve a gh account.
+  cat > "$h/.config/git-identity/identities" <<IDS
+acme   dev@acme.test   ssh-acme
+IDS
+  assert_status "no gh-user column → exit 2" 2 \
+    env PATH="$stub:$PATH" zsh "$gi" --profile acme "$(_mktemp_dir)/p"
+  # ...but --no-create still works fine without a gh-user
+  local nc; nc=$(_mktemp_dir)
+  ( env PATH="$stub:$PATH" zsh "$gi" --profile acme --no-create --remote git@ssh-acme:acme-org/nc.git "$nc/nc" >/dev/null 2>&1 )
+  assert_file "--no-create succeeds without gh-user" "$nc/nc/README.md"
+  # restore the standard 4-column fixture
+  cat > "$h/.config/git-identity/identities" <<IDS
+acme     dev@acme.test     ssh-acme     gh-acme
+globex   dev@globex.test   ssh-globex   gh-globex
+IDS
+
+  describe "gitinit: unauthenticated gh account → exit 2"
+  local stub_none; stub_none=$(_mktemp_dir)/bin
+  make_gh_stub "$stub_none" ""    # nobody authenticated
+  assert_status "gh not authed → exit 2" 2 \
+    env PATH="$stub_none:$PATH" zsh "$gi" --profile acme "$(_mktemp_dir)/p"
+
+  describe "gitinit: default creates repo (private) + pushes, owner from profile"
+  make_bare "$remotes" acme acme-org/created.git >/dev/null
+  ( env PATH="$stub:$PATH" zsh "$gi" --profile acme "$h/code/created" >/dev/null 2>&1 )
+  assert_eq "gh repo create called with profile owner + --private" \
+    "gh repo create acme-org/created --private" \
+    "$(cat "$stub/gh-calls.log" 2>/dev/null)"
+  assert_eq "develop pushed to remote" "develop" \
+    "$(git -C "$remotes/acme/acme-org/created.git" branch --list develop --format='%(refname:short)' 2>/dev/null)"
+  assert_eq "main pushed to remote" "main" \
+    "$(git -C "$remotes/acme/acme-org/created.git" branch --list main --format='%(refname:short)' 2>/dev/null)"
+  assert_eq "test pushed to remote" "test" \
+    "$(git -C "$remotes/acme/acme-org/created.git" branch --list test --format='%(refname:short)' 2>/dev/null)"
+
+  describe "gitinit: owner falls back to gh-user when no profile owner"
+  local stub_fb; stub_fb=$(_mktemp_dir)/bin
+  make_gh_stub "$stub_fb"
+  make_bare "$remotes" acme gh-acme/solo.git >/dev/null
+  local fb; fb=$(_mktemp_dir)
+  ( cd "$fb" && env PATH="$stub_fb:$PATH" zsh "$gi" --profile acme --remote git@ssh-acme:gh-acme/solo.git solo >/dev/null 2>&1 )
+  assert_eq "gh repo create called under gh-user namespace" \
+    "gh repo create gh-acme/solo --private" \
+    "$(cat "$stub_fb/gh-calls.log" 2>/dev/null)"
+
+  describe "gitinit --public: passes --public to gh"
+  local stub2; stub2=$(_mktemp_dir)/bin
+  make_gh_stub "$stub2"
+  make_bare "$remotes" acme acme-org/pub.git >/dev/null
+  ( env PATH="$stub2:$PATH" zsh "$gi" --profile acme --public "$h/code/pub" >/dev/null 2>&1 )
+  assert_eq "gh repo create called with --public" \
+    "gh repo create acme-org/pub --public" \
+    "$(cat "$stub2/gh-calls.log" 2>/dev/null)"
+
+  describe "gitinit: --no-create does NOT call gh"
+  local stub3; stub3=$(_mktemp_dir)/bin
+  make_gh_stub "$stub3"
+  ( env PATH="$stub3:$PATH" zsh "$gi" --profile acme --no-create --remote git@ssh-acme:acme-org/quiet.git "$(_mktemp_dir)/quiet" >/dev/null 2>&1 )
+  assert_no_file "no gh repo create call logged" "$stub3/gh-calls.log"
 }

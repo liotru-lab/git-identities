@@ -138,13 +138,18 @@ your prompt config is untouched (the `${custom.git_email_*}` lines in your
 ### `identities` — the source of truth
 
 ```text
-# alias    email                  ssh-host
-work       you@company.com        github.com
-personal   you@personal.example   github-personal
+# alias    email                  ssh-host          gh-user
+work       you@company.com        github.com        you-at-work
+personal   you@personal.example   github-personal   you
 ```
 
 Adding an account is a one-line edit here — no script changes. Everything
 (prompt, sweep, clone, init) reads this table.
+
+The 4th column, **`gh-user`**, is optional: it's the GitHub username as known to
+the [`gh`](https://cli.github.com) CLI, and is only needed by `gitinit --create`
+to pick which authenticated `gh` account creates the remote repo. Three-column
+lines (no `gh-user`) remain valid for every other command.
 
 ### `profiles` — directory → account rules (for `gitclone` / `gitinit`)
 
@@ -197,19 +202,36 @@ Resolves an alias (flag → URL host → `profiles` by `$PWD`), rewrites the URL
 the right SSH host (and HTTPS→SSH), clones, then sets `user.email`. No match →
 behaves exactly like `git clone`.
 
-### `gitinit` — scaffold a new repo
+### `gitinit` — scaffold a new repo (and create it on GitHub)
 
 ```sh
-cd ~/Projects/personal && gitinit my-thing
+cd ~/Projects/personal && gitinit my-thing               # create on GitHub + push
+cd ~/Projects/personal && gitinit --public my-thing      # ...as a public repo
+cd ~/Projects/personal && gitinit --no-create my-thing   # local scaffold only
 ```
+
+`gitinit` is for **new** repos (use [`gitclone`](#gitclone--clone-with-identity)
+for existing ones), so by default it goes all the way to GitHub.
 
 Default flow: `git init -b main` → set `user.email` → create `README.md` +
 initial commit → create `test` and `develop` branches → switch to `develop` →
-add `origin` (built as `git@<host>:<owner>/<name>.git` from the profile) and
-configure `develop` to track `origin/develop`.
+add `origin` (built as `git@<host>:<owner>/<name>.git` from the profile),
+configure `develop` to track `origin/develop` → **create the GitHub repo via
+`gh` and push `develop`, `main`, `test`**.
 
-Flags: `--remote URL` (override the built URL), `--no-remote` (skip remote
-setup), `--no-branches` (just init + email), `--profile <alias>`.
+The repo is created **private** by default (`--public` to override) under the
+profile `owner` (falling back to the `gh-user`). This needs the alias to have a
+`gh-user` (4th `identities` column) and that account authenticated in `gh`
+(`gh auth login`) — the right account is selected per-command, so your global
+`gh` state is left untouched.
+
+Pass **`--no-create`** to stop after the local scaffold (the old default, handy
+when the remote already exists). `--no-remote` and `--no-branches` imply
+`--no-create`.
+
+Flags: `--no-create` (skip GitHub repo creation + push), `--remote URL`
+(override the built URL), `--no-remote` (skip remote setup), `--no-branches`
+(just init + email), `--public` (create a public repo), `--profile <alias>`.
 
 ### Prompt
 
@@ -218,9 +240,8 @@ The starship prompt shows the active identity in angle brackets after the branch
 | state    | example           | color  | meaning                                   |
 | -------- | ----------------- | ------ | ----------------------------------------- |
 | match    | `<personal>`      | dim    | email and remote host agree               |
-| mismatch | `<work!personal>` | red    | author ≠ pusher (`email!host`)            |
+| mismatch | `<work!personal>` | red    | author != pusher (`email!host`)           |
 | warn     | `<work!?https>`   | yellow | no remote / unknown email or host / HTTPS |
-
 
 `GIT_IDENTITY_DEBUG=1` in front of `gitclone`/`gitinit` prints decisions.
 
