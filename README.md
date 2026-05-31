@@ -264,7 +264,8 @@ installation and configuration:
 ```sh
 git-identity-doctor              # offline checks
 git-identity-doctor --auth       # also test SSH auth + show each gh token's scopes
-git-identity-doctor --init-test  # end-to-end: really create + push + delete a repo
+git-identity-doctor --init-test          # end-to-end: really create + push + delete
+git-identity-doctor --init-test liotru   # ...under a specific identity
 ```
 
 It checks that the executables are on your `PATH`, the config files exist, the
@@ -276,10 +277,11 @@ With **`--auth`** it additionally opens SSH connections per host and prints each
 account's actual `gh` token scopes (failing if the `repo` scope `gitinit` needs
 is missing, noting when `delete_repo` is absent).
 
-With **`--init-test`** (implies `--auth`) it runs the real thing end-to-end:
-`gitinit` creates a throwaway **private** repo on GitHub, pushes all three
-branches, then deletes it — so it genuinely fails if `gh` permissions are wrong.
-Deleting the test repo needs the `delete_repo` scope
+With **`--init-test [alias]`** (implies `--auth`) it runs the real thing
+end-to-end: `gitinit` creates a throwaway **private** repo on GitHub, pushes all
+three branches, then deletes it — so it genuinely fails if `gh` permissions are
+wrong. It tests under the given `alias` if you name one, otherwise the first
+identity with a `gh-user`. Deleting the test repo needs the `delete_repo` scope
 (`gh auth refresh -h github.com -s delete_repo`); without it the test still
 creates + pushes but reports the repo for manual deletion.
 

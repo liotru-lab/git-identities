@@ -4,10 +4,13 @@
 # Usage:
 #   git-identity-doctor              offline checks (files, identities, ssh, profiles)
 #   git-identity-doctor --auth       also test SSH auth + show each gh token's scopes
-#   git-identity-doctor --init-test  end-to-end: gitinit actually creates a throwaway
+#   git-identity-doctor --init-test [alias]
+#                                    end-to-end: gitinit actually creates a throwaway
 #                                     private repo on GitHub and pushes, then deletes
 #                                     it (proves gh permissions for real). Implies
-#                                     --auth. Needs the repo + delete_repo gh scopes.
+#                                     --auth. Tests under [alias] if given, else the
+#                                     first identity with a gh-user. Needs the 'repo'
+#                                     scope (and 'delete_repo' for auto-cleanup).
 #   git-identity-doctor -h           this help
 #
 # Exit status: 0 if no failures, 1 if any check FAILED (warnings don't fail).
@@ -25,11 +28,14 @@ BIN_DST="$HOME/.local/bin"
 
 do_auth=0
 do_init_test=0
+init_test_alias=""   # optional alias for --init-test; empty = first eligible
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --auth)      do_auth=1; shift ;;
-    --init-test) do_init_test=1; do_auth=1; shift ;;  # the real e2e test implies --auth
-    -h|--help)   sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --init-test) do_init_test=1; do_auth=1; shift  # the real e2e test implies --auth
+                 # optional next arg names the identity to test under (not a flag)
+                 if [[ $# -gt 0 && "$1" != -* ]]; then init_test_alias="$1"; shift; fi ;;
+    -h|--help)   sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "git-identity-doctor: unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -232,15 +238,25 @@ if (( do_init_test )); then
   elif ! command -v gitinit >/dev/null 2>&1; then
     fail "gitinit not on PATH — cannot run --init-test"
   else
-    # Pick the first alias that has a gh-user.
     et_alias=""; et_ghuser=""
-    for a in "${ALIASES_ORDERED[@]}"; do
-      gu="$(alias_to_ghuser "$a")"
-      [[ -n "$gu" ]] && { et_alias="$a"; et_ghuser="$gu"; break; }
-    done
-    if [[ -z "$et_alias" ]]; then
-      fail "no alias has a gh-user (4th identities column) — cannot run --init-test"
+    if [[ -n "$init_test_alias" ]]; then
+      # Use the alias the caller named — must exist and have a gh-user.
+      if [[ -z "${ALIAS_TO_HOST[$init_test_alias]:-}" ]]; then
+        fail "--init-test: unknown alias '$init_test_alias' (not in identities)"
+      elif [[ -z "$(alias_to_ghuser "$init_test_alias")" ]]; then
+        fail "--init-test: alias '$init_test_alias' has no gh-user (4th identities column)"
+      else
+        et_alias="$init_test_alias"; et_ghuser="$(alias_to_ghuser "$init_test_alias")"
+      fi
     else
+      # No alias given — pick the first one that has a gh-user.
+      for a in "${ALIASES_ORDERED[@]}"; do
+        gu="$(alias_to_ghuser "$a")"
+        [[ -n "$gu" ]] && { et_alias="$a"; et_ghuser="$gu"; break; }
+      done
+      [[ -z "$et_alias" ]] && fail "no alias has a gh-user (4th identities column) — cannot run --init-test"
+    fi
+    if [[ -n "$et_alias" ]]; then
       # Unique-ish throwaway name. No Date/random available portably; use $$ + epoch.
       et_name="gitid-doctor-test-$$-$(date +%s 2>/dev/null || echo x)"
       et_owner="$et_ghuser"            # create under the account's own namespace
