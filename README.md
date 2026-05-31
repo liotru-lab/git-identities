@@ -304,6 +304,9 @@ The starship prompt shows the active identity in angle brackets after the branch
 - **zsh** (`/bin/zsh`) — all scripts are zsh; uses arrays, `vared`, `${~var}`.
 - **git 2.28+** (for `git init -b`).
 - **starship** for the prompt integration.
+- **gh** (GitHub CLI) for `gitinit`'s repo creation, with each account's token
+  holding the `repo` scope (and `delete_repo` only if you use
+  `git-identity-doctor --init-test`'s auto-cleanup).
 - A `Host` block in `~/.ssh/config` for every `ssh-host` in `identities`,
   each with its own `IdentityFile` and `IdentitiesOnly yes`.
 
