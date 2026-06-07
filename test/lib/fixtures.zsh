@@ -14,7 +14,10 @@
 typeset -ga _TMPDIRS
 
 _mktemp_dir() {
-  local d; d=$(mktemp -d "${TMPDIR:-/tmp}/git-identity-test.XXXXXX")
+  # Strip any trailing slash from TMPDIR; otherwise paths get a `//` that `cd`
+  # later collapses, breaking the profile globs built from these paths.
+  local base="${TMPDIR:-/tmp}"; base="${base%/}"
+  local d; d=$(mktemp -d "$base/git-identity-test.XXXXXX")
   _TMPDIRS+=("$d")
   print -r -- "$d"
 }
@@ -102,14 +105,20 @@ mkrepo() {
 #                                  else exits 1 (simulates "not authenticated").
 #   - `gh repo create <args>`    → appends its full argv to <bindir>/gh-calls.log
 #                                  and exits 0 (no real repo is created).
+#   - `gh api <args>`            → appends its full argv to <bindir>/gh-calls.log
+#                                  and exits 0 (no real transfer happens).
 #   - anything else              → exits 0.
-# Tests read gh-calls.log to assert what gitinit asked gh to do.
+# Tests read gh-calls.log to assert what gitinit/git-identity asked gh to do.
 make_gh_stub() {
   local bindir="$1" authed="${2:-gh-acme gh-globex}"
   mkdir -p "$bindir"
   cat > "$bindir/gh" <<STUB
 #!/bin/zsh
 log="$bindir/gh-calls.log"
+if [[ "\$1" == "api" ]]; then
+  print -r -- "gh \$*" >> "\$log"
+  exit 0
+fi
 case "\$1 \$2" in
   "auth token")
     user=""

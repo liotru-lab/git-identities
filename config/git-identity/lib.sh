@@ -2,6 +2,7 @@
 # Sourced (no shebang) by starship.sh, git-identity, gitclone, gitinit.
 
 IDENTITIES_FILE="${IDENTITIES_FILE:-$HOME/.config/git-identity/identities}"
+PROFILES_FILE="${PROFILES_FILE:-$HOME/.config/git-identity/profiles}"
 
 typeset -gA ALIAS_TO_EMAIL ALIAS_TO_HOST EMAIL_TO_ALIAS HOST_TO_ALIAS ALIAS_TO_GHUSER
 typeset -ga ALIASES_ORDERED
@@ -46,10 +47,52 @@ parse_remote_host() {
   fi
 }
 
+# Parse the owner (org/user) from a remote URL. Handles:
+#   git@host:owner/repo[.git]            (scp-like SSH)
+#   ssh://git@host[:port]/owner/repo     (ssh URL)
+#   https://host/owner/repo[.git]        (HTTPS)
+# Empty if it can't be determined.
+parse_remote_owner() {
+  local url="$1"
+  if [[ "$url" =~ ^git@[^:]+:([^/]+)/ ]]; then
+    echo "${match[1]}"
+  elif [[ "$url" =~ ^(ssh|https?|git)://[^/]+/([^/]+)/ ]]; then
+    echo "${match[2]}"
+  fi
+}
+
+# Match a path against the profiles file (first match wins). Sets the globals
+# pf_alias / pf_owner (both empty when nothing matches). Shared by gitclone,
+# gitinit and detect_identity's owner-drift check.
+match_profile() {
+  pf_alias=""; pf_owner=""
+  [[ -f "$PROFILES_FILE" ]] || return
+  local check_path="$1" line
+  local -a fields
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%\#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+    fields=( ${=line} )
+    local pat="${fields[1]:-}" ali="${fields[2]:-}" own="${fields[3]:-}"
+    pat="${pat/#\~/$HOME}"
+    [[ -z "$pat" || -z "$ali" ]] && continue
+    case "$check_path" in
+      ${~pat}) pf_alias="$ali"; pf_owner="$own"; return ;;
+    esac
+  done < "$PROFILES_FILE"
+}
+
 # Detect identity for a repo. Optional path arg (default ".").
 # Sets: ID_EMAIL, ID_E_ALIAS, ID_REMOTE, ID_HOST, ID_H_ALIAS, ID_STATE
+#       ID_OWNER, ID_EXPECTED_OWNER, ID_OWNER_STATE
 # ID_STATE in { ok, mismatch, warn-no-email, warn-no-remote, warn-https,
 #               warn-unknown-email, warn-unknown-host, warn-unknown-both }
+# ID_OWNER_STATE in { ok, drift, unknown } — the org/owner on disk vs the owner
+# the profiles file declares for this path. Orthogonal to ID_STATE: a repo can
+# be identity-ok yet owner-drift (right key/email, wrong GitHub org). 'ok' also
+# means "no expectation" (no matching profile, or its owner column is blank).
 detect_identity() {
   local repo_dir="${1:-.}"
   ID_EMAIL=$(git -C "$repo_dir" config user.email 2>/dev/null || true)
@@ -66,6 +109,23 @@ detect_identity() {
   elif [[ -z "$ID_H_ALIAS" ]]; then ID_STATE=warn-unknown-host
   elif [[ "$ID_E_ALIAS" == "$ID_H_ALIAS" ]]; then ID_STATE=ok
   else ID_STATE=mismatch
+  fi
+
+  # Owner drift: compare the remote's owner against the profile-declared owner
+  # for this repo's top-level path.
+  ID_OWNER=$(parse_remote_owner "$ID_REMOTE")
+  ID_EXPECTED_OWNER=""
+  ID_OWNER_STATE=ok
+  local top
+  top=$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null || true)
+  if [[ -n "$top" ]]; then
+    match_profile "$top"
+    ID_EXPECTED_OWNER="$pf_owner"
+  fi
+  if [[ -n "$ID_EXPECTED_OWNER" && -n "$ID_REMOTE" ]]; then
+    if   [[ -z "$ID_OWNER" ]];                     then ID_OWNER_STATE=unknown
+    elif [[ "$ID_OWNER" != "$ID_EXPECTED_OWNER" ]]; then ID_OWNER_STATE=drift
+    fi
   fi
 }
 

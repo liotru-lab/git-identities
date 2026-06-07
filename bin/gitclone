@@ -20,7 +20,6 @@
 set -u
 
 LIB="$HOME/.config/git-identity/lib.sh"
-PROFILES_FILE="$HOME/.config/git-identity/profiles"
 
 [[ -f "$LIB" ]] || { echo "missing $LIB" >&2; exit 2; }
 source "$LIB"
@@ -42,26 +41,7 @@ EOF
   exit "${1:-0}"
 }
 
-# Profile lookup: sets pf_alias / pf_owner for a path
-match_profile() {
-  pf_alias=""; pf_owner=""
-  [[ -f "$PROFILES_FILE" ]] || return
-  local check_path="$1" line
-  local -a fields
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%%\#*}"
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
-    [[ -z "$line" ]] && continue
-    fields=( ${=line} )
-    local pat="${fields[1]:-}" ali="${fields[2]:-}" own="${fields[3]:-}"
-    pat="${pat/#\~/$HOME}"
-    [[ -z "$pat" || -z "$ali" ]] && continue
-    case "$check_path" in
-      ${~pat}) pf_alias="$ali"; pf_owner="$own"; return ;;
-    esac
-  done < "$PROFILES_FILE"
-}
+# Profile lookup (match_profile, sets pf_alias / pf_owner) comes from lib.sh.
 
 # ----- Parse our --profile flag -----
 forced_alias=""

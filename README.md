@@ -56,6 +56,14 @@ Host github-personal
 A repo is **OK** when its `user.email` alias matches its origin host alias.
 Every other situation is a named state (see below).
 
+On top of that identity check there's a second, independent axis: **owner
+drift**. The org/user a repo actually lives under (the `owner` in its origin
+URL) is a property of the repo, set once at clone/init time — not of the
+identity pushing it. But once `profiles` declares an expected `owner` for a
+path, a repo on disk under a *different* owner is config-vs-reality drift, and
+the check flags it (state `owner-drift`) even when the identity itself is OK.
+A repo can be perfectly OK on identity yet sit in the wrong GitHub org.
+
 ## Repo layout
 
 ```text
@@ -163,7 +171,9 @@ Three-column lines (no `gh-user`) remain valid for every other command, and with
 ```
 
 Matched **top-to-bottom, first match wins** — put the catch-all last.
-`owner` is the GitHub org/user used to build remote URLs in `gitinit`.
+`owner` is the GitHub org/user used to build remote URLs in `gitinit`, and it
+doubles as the **expected owner** for `git-identity`'s owner-drift check: a repo
+whose origin lives under a different owner than its path's rule is flagged.
 
 ### `ignore` — repos to skip during `--sweep`
 
@@ -184,13 +194,27 @@ git-identity --sweep ~/Projects       # one line per repo found
 git-identity --sweep ~/Projects --porcelain      # tab-separated, for piping
 git-identity --sweep ~/Projects --fix            # interactive fix, repo by repo
 git-identity --sweep ~/Projects --fix --include-ignored   # revisit ignored repos
-git-identity --sweep ~/Projects --fix --dry-run  # preview, write nothing
+
+  git-identity --sweep ~/Projects --fix --dry-run  # preview, write nothing
 ```
 
 In `--fix` mode each problem repo offers context-aware actions: switch email to
 the canonical one, rewrite the remote host, convert HTTPS→SSH, **skip** (just
 this run), or **ignore** (persist to the `ignore` file). All applied changes are
 logged to `~/.config/git-identity/migrate.log`.
+
+For **owner drift** the fix offers two paths:
+
+- **(l) local only** — repoint `origin` to the expected owner. Use this when the
+  repo *already* lives under the new owner on GitHub and only the local remote is
+  stale.
+- **(t) transfer** — actually move the repo on GitHub
+  (`gh api repos/<owner>/<repo>/transfer`) to the expected owner, then repoint
+  `origin`. It acts as the identity's `gh-user` account (token fetched
+  per-command, so your global `gh` state is untouched — same mechanism as
+  `gitinit`), asks for an extra confirmation since transfers are hard to undo,
+  and is only offered when `gh` is installed and the alias has a `gh-user`.
+  `--dry-run` prints both commands without running them.
 
 ### `gitclone` — clone with identity
 
@@ -304,9 +328,11 @@ The starship prompt shows the active identity in angle brackets after the branch
 - **zsh** (`/bin/zsh`) — all scripts are zsh; uses arrays, `vared`, `${~var}`.
 - **git 2.28+** (for `git init -b`).
 - **starship** for the prompt integration.
-- **gh** (GitHub CLI) for `gitinit`'s repo creation, with each account's token
-  holding the `repo` scope (and `delete_repo` only if you use
-  `git-identity-doctor --init-test`'s auto-cleanup).
+- **gh** (GitHub CLI) for `gitinit`'s repo creation and `git-identity --fix`'s
+  owner-drift transfer, with each account's token holding the `repo` scope (and
+  `delete_repo` only if you use `git-identity-doctor --init-test`'s auto-cleanup).
+  A transfer additionally needs admin on the repo and permission to create repos
+  in the target owner.
 - A `Host` block in `~/.ssh/config` for every `ssh-host` in `identities`,
   each with its own `IdentityFile` and `IdentitiesOnly yes`.
 
