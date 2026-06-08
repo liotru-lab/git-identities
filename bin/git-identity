@@ -20,7 +20,7 @@ usage() {
 Usage: git-identity [OPTIONS]
 
   (no flags)              Check current repo (detailed)
-  --sweep PATH            Walk PATH, one line per repo found
+  --sweep [PATH]          Walk PATH (default: current dir), one line per repo
   --fix                   Interactive fix mode (prompt for each not-OK repo)
   --include-ignored       Also visit ignored repos (revisit mode)
   --porcelain             Tab-separated sweep output
@@ -35,13 +35,21 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --sweep)           sweep=1; sweep_path="${2:-}"; shift 2 ;;
+    --sweep)           sweep=1
+                       # PATH is optional and defaults to '.'; only consume the
+                       # next token when it's a real path, not another flag.
+                       if [[ -n "${2:-}" && "$2" != -* ]]; then
+                         sweep_path="$2"; shift 2
+                       else
+                         sweep_path="."; shift
+                       fi ;;
     --fix)             fix=1; shift ;;
     --include-ignored) include_ignored=1; shift ;;
     --porcelain)       porcelain=1; shift ;;
     --auth)            do_auth=1; shift ;;
     --dry-run)         dry_run=1; shift ;;
-    --ignore-file)     ignore_file="${2:-}"; shift 2 ;;
+    --ignore-file)     [[ $# -ge 2 ]] || { echo "git-identity: --ignore-file needs a PATH" >&2; exit 2; }
+                       ignore_file="$2"; shift 2 ;;
     --no-ignore)       no_ignore=1; shift ;;
     -h|--help)         usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; usage >&2; exit 2 ;;

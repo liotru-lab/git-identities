@@ -190,6 +190,7 @@ whose origin lives under a different owner than its path's rule is flagged.
 ```sh
 git-identity                          # detailed report for the current repo
 git-identity --auth                   # ...also test SSH auth to the host
+git-identity --sweep                  # sweep the current dir (PATH defaults to .)
 git-identity --sweep ~/Projects       # one line per repo found
 git-identity --sweep ~/Projects --porcelain      # tab-separated, for piping
 git-identity --sweep ~/Projects --fix            # interactive fix, repo by repo

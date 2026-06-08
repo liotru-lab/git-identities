@@ -49,7 +49,8 @@ typeset -a args
 args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --profile) forced_alias="${2:-}"; shift 2 ;;
+    --profile) [[ $# -ge 2 ]] || { echo "gitclone: --profile needs an alias" >&2; usage 2; }
+               forced_alias="$2"; shift 2 ;;
     -h|--help) usage 0 ;;
     *) args+=("$1"); shift ;;
   esac
