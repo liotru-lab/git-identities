@@ -59,4 +59,18 @@ IGN
   assert_status "missing dir → exit 2" 2 zsh "$gi" --sweep "$root/does-not-exist"
   assert_status "unknown flag → exit 2" 2 zsh "$gi" --bogus
   assert_status "--help → exit 0" 0 zsh "$gi" --help
+  # --ignore-file needs a value; as the LAST arg it must exit 2 cleanly, not
+  # crash on `shift 2`.
+  assert_status "--ignore-file with no PATH → exit 2" 2 zsh "$gi" --ignore-file
+  assert_not_contains "no zsh shift crash" "$(zsh "$gi" --ignore-file 2>&1)" "shift count must be"
+
+  describe "sweep: --sweep PATH is optional, defaults to ."
+  # No PATH → sweeps the current dir (here, a clean subtree → exit 0).
+  ( cd "$clean" && zsh "$gi" --sweep >/dev/null 2>&1 )
+  assert_eq "no-arg --sweep sweeps cwd (clean → 0)" 0 $?
+  assert_not_contains "no zsh shift crash" "$(cd "$clean" && zsh "$gi" --sweep 2>&1)" "shift count must be"
+  # A following flag is NOT swallowed as the path: --sweep --porcelain over cwd.
+  local porc; porc=$(cd "$clean" && zsh "$gi" --sweep --porcelain 2>&1)
+  assert_not_contains "flag not treated as path" "$porc" "not a directory"
+  assert_contains "swept cwd, found the repo" "$porc" "good"
 }

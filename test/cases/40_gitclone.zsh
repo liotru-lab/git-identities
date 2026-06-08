@@ -42,4 +42,7 @@ PRO
   describe "gitclone: error handling"
   assert_status "unknown --profile → exit 2" 2 zsh "$gc" --profile ghost https://github.com/o/r.git
   assert_status "no URL → exit 2"            2 zsh "$gc" --profile acme
+  # --profile as the last arg must not crash on `shift 2`.
+  assert_status "--profile with no value → exit 2" 2 zsh "$gc" --profile
+  assert_not_contains "no zsh shift crash" "$(zsh "$gc" --profile 2>&1)" "shift count must be"
 }

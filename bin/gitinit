@@ -59,8 +59,10 @@ typeset -a args
 args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --profile)      forced_alias="${2:-}"; shift 2 ;;
-    --remote)       forced_remote_url="${2:-}"; shift 2 ;;
+    --profile)      [[ $# -ge 2 ]] || { echo "gitinit: --profile needs an alias" >&2; exit 2; }
+                    forced_alias="$2"; shift 2 ;;
+    --remote)       [[ $# -ge 2 ]] || { echo "gitinit: --remote needs a URL" >&2; exit 2; }
+                    forced_remote_url="$2"; shift 2 ;;
     -s|--simple)    simple=1; shift ;;
     --no-remote)    no_remote=1; shift ;;
     --no-branches)  no_branches=1; shift ;;

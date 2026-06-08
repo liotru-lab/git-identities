@@ -45,6 +45,12 @@ PRO
   assert_status "no alias/owner + no --remote/--no-remote → exit 2" 2 \
     zsh "$gi" --no-create "$d3/proj"
 
+  describe "gitinit: value-flag as last arg doesn't crash"
+  # --profile / --remote with no value must exit 2 cleanly, not crash on shift 2.
+  assert_status "--profile with no value → exit 2" 2 zsh "$gi" --profile
+  assert_status "--remote with no value → exit 2"  2 zsh "$gi" --remote
+  assert_not_contains "no zsh shift crash" "$(zsh "$gi" --remote 2>&1)" "shift count must be"
+
   # --- Default behavior: create the GitHub repo + push, with a stubbed gh and a
   #     local bare repo standing in for the remote (no network). ---
   local remotes; remotes=$(_mktemp_dir)
