@@ -28,6 +28,7 @@ SSH
 
   describe "doctor: parses a healthy config"
   assert_contains "lists the two identities" "$out" "2 identities: acme globex"
+  assert_contains "lib.sh owner-drift support ok" "$out" "supports the owner-drift check"
   assert_contains "profiles section ok"      "$out" "profile rule"
   assert_contains "ssh-acme block found"     "$out" "alias 'acme' → Host 'ssh-acme' present"
   assert_contains "ssh-globex block found"   "$out" "alias 'globex' → Host 'ssh-globex' present"
@@ -63,6 +64,35 @@ PRO
   out=$(zsh "$doctor" 2>&1)
   describe "doctor: flags a profile with an unknown alias"
   assert_contains "unknown-alias profile reported" "$out" "alias 'nosuchalias' is not in identities"
+
+  # ---- stale lib.sh (no owner-drift helper) → freshness check fails ----
+  local h6; h6=$(make_home); export HOME="$h6"
+  # Drop parse_remote_owner to simulate a copy that predates the feature.
+  local lib6="$h6/.config/git-identity/lib.sh"
+  sed '/^parse_remote_owner() {/,/^}/d' "$lib6" > "$lib6.new" && mv "$lib6.new" "$lib6"
+  out=$(zsh "$doctor" 2>&1)
+  describe "doctor: flags a stale lib.sh lacking owner-drift"
+  assert_contains "stale lib reported" "$out" "predates the owner-drift check"
+
+  # ---- profile owner verification under --auth (stubbed gh + ssh, no network) ----
+  local h7; h7=$(make_home); export HOME="$h7"
+  cat > "$h7/.config/git-identity/profiles" <<PRO
+$h7/good/**   acme   acme-org
+$h7/bad/**    acme   acme-typo
+PRO
+  local stub7; stub7=$(_mktemp_dir)/bin
+  make_gh_stub "$stub7"                       # gh-acme authenticated
+  # An ssh stub so --auth's SSH section never touches the network.
+  cat > "$stub7/ssh" <<'SSHSTUB'
+#!/bin/zsh
+exit 1
+SSHSTUB
+  chmod +x "$stub7/ssh"
+  # GH_STUB_OWNERS lists the owners that "exist"; acme-typo is absent → 404.
+  out=$(GH_STUB_OWNERS="acme-org" env PATH="$stub7:$PATH" zsh "$doctor" --auth 2>&1)
+  describe "doctor --auth: verifies declared profile owners exist"
+  assert_contains "valid owner reported existing" "$out" "profile owner 'acme-org' exists"
+  assert_contains "typo owner reported missing"   "$out" "profile owner 'acme-typo' not found"
 
   # ---- missing lib.sh → hard fail, can't continue ----
   local h5; h5=$(make_home); export HOME="$h5"

@@ -3,7 +3,8 @@
 #
 # Usage:
 #   git-identity-doctor              offline checks (files, identities, ssh, profiles)
-#   git-identity-doctor --auth       also test SSH auth + show each gh token's scopes
+#   git-identity-doctor --auth       also test SSH auth, show each gh token's
+#                                     scopes, and verify each profile owner exists
 #   git-identity-doctor --init-test [alias]
 #                                    end-to-end: gitinit actually creates a throwaway
 #                                     private repo on GitHub and pushes, then deletes
@@ -35,7 +36,7 @@ while [[ $# -gt 0 ]]; do
     --init-test) do_init_test=1; do_auth=1; shift  # the real e2e test implies --auth
                  # optional next arg names the identity to test under (not a flag)
                  if [[ $# -gt 0 && "$1" != -* ]]; then init_test_alias="$1"; shift; fi ;;
-    -h|--help)   sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "git-identity-doctor: unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -92,6 +93,14 @@ fi
 source "$LIB"
 _load_identities
 
+# The installed lib.sh must be current enough to perform the owner-drift check;
+# an older copy (stale install) silently lacks it.
+if typeset -f parse_remote_owner >/dev/null 2>&1; then
+  ok "lib.sh supports the owner-drift check"
+else
+  fail "installed lib.sh predates the owner-drift check — re-run install.sh"
+fi
+
 # ============================================================
 section "Identities table"
 if [[ ${#ALIASES_ORDERED[@]} -eq 0 ]]; then
@@ -144,6 +153,9 @@ done
 
 # ============================================================
 section "Profiles"
+# Collected here, verified for real (does the owner exist?) in the network
+# section under --auth.
+typeset -a PROFILE_OWNERS; PROFILE_OWNERS=()
 if [[ -f "$PROFILES_FILE" ]]; then
   integer pln=0 prules=0
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -163,6 +175,8 @@ if [[ -f "$PROFILES_FILE" ]]; then
       fail "profiles line $pln: alias '$pali' is not in identities"
     elif [[ -z "$pown" ]]; then
       note "rule '$pat' → '$pali' has no owner (gitinit needs --remote or --no-create here)"
+    else
+      PROFILE_OWNERS+=("${pali}"$'\t'"${pown}")
     fi
   done < "$PROFILES_FILE"
   (( prules > 0 )) && ok "$prules profile rule$([[ $prules -eq 1 ]] || echo s) reference known aliases"
@@ -219,6 +233,34 @@ if (( do_auth )); then
       else
         fail "alias '$a' → '$gu' lacks 'repo' scope (gitinit create will fail). scopes: ${scopes}"
         note "fix: gh auth refresh -h github.com -s repo"
+      fi
+    done
+  fi
+
+  # ---- profile owners (network): does each declared owner actually exist? ----
+  # The owner column drives gitinit's remote URL AND the owner-drift check, so a
+  # typo (reachnetap vs reachnetapp) would surface as confusing "drift" on every
+  # repo. Verify existence via the rule's own gh account.
+  if command -v gh >/dev/null 2>&1 && (( ${#PROFILE_OWNERS[@]} > 0 )); then
+    section "Profile owners (network)"
+    typeset -A seen_owner
+    for pair in "${PROFILE_OWNERS[@]}"; do
+      pali="${pair%%$'\t'*}"; pown="${pair#*$'\t'}"
+      [[ -n "${seen_owner[$pali/$pown]:-}" ]] && continue
+      seen_owner[$pali/$pown]=1
+      gu="$(alias_to_ghuser "$pali")"
+      if [[ -z "$gu" ]]; then
+        note "owner '$pown' (alias '$pali'): no gh-user to verify with — skipped"
+        continue
+      fi
+      if ! tok=$(gh auth token -u "$gu" 2>/dev/null) || [[ -z "$tok" ]]; then
+        warn "owner '$pown' (alias '$pali' → '$gu'): account not authenticated — can't verify"
+        continue
+      fi
+      if GH_TOKEN="$tok" gh api "users/${pown}" >/dev/null 2>&1; then
+        ok "profile owner '$pown' exists (verified as '$gu')"
+      else
+        fail "profile owner '$pown' not found as '$gu' — typo or no access (owner-drift check would misfire)"
       fi
     done
   fi
