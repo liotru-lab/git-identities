@@ -293,19 +293,24 @@ installation and configuration:
 
 ```sh
 git-identity-doctor              # offline checks
-git-identity-doctor --auth       # also test SSH auth + show each gh token's scopes
+git-identity-doctor --auth       # also test SSH auth, gh token scopes, profile owners
 git-identity-doctor --init-test          # end-to-end: really create + push + delete
 git-identity-doctor --init-test liotru   # ...under a specific identity
 ```
 
 It checks that the executables are on your `PATH`, the config files exist, the
-`identities` table parses (flagging malformed lines and duplicates), every
-`ssh-host` has a matching `Host` block in `~/.ssh/config`, `profiles` rules
-reference known aliases, and `gh` is installed with each `gh-user` authenticated.
+installed `lib.sh` is current enough to perform the owner-drift check (a stale
+install fails here with a "re-run install.sh" hint), the `identities` table
+parses (flagging malformed lines and duplicates), every `ssh-host` has a matching
+`Host` block in `~/.ssh/config`, `profiles` rules reference known aliases, and
+`gh` is installed with each `gh-user` authenticated.
 
-With **`--auth`** it additionally opens SSH connections per host and prints each
+With **`--auth`** it additionally opens SSH connections per host, prints each
 account's actual `gh` token scopes (failing if the `repo` scope `gitinit` needs
-is missing, noting when `delete_repo` is absent).
+is missing, noting when `delete_repo` is absent), and verifies that every owner
+declared in `profiles` actually exists on GitHub — catching a typo'd owner
+(`reachnetap` vs `reachnetapp`) that would otherwise surface as confusing
+owner-drift on every repo under that rule.
 
 With **`--init-test [alias]`** (implies `--auth`) it runs the real thing
 end-to-end: `gitinit` creates a throwaway **private** repo on GitHub, pushes all

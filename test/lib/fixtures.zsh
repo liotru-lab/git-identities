@@ -117,6 +117,13 @@ make_gh_stub() {
 log="$bindir/gh-calls.log"
 if [[ "\$1" == "api" ]]; then
   print -r -- "gh \$*" >> "\$log"
+  # users/<name> existence: when GH_STUB_OWNERS is set, succeed only for listed
+  # names (simulates a 404 for typo'd owners); otherwise succeed for everything.
+  if [[ "\$2" == users/* && -n "\${GH_STUB_OWNERS:-}" ]]; then
+    name="\${2#users/}"
+    for o in \${=GH_STUB_OWNERS}; do [[ "\$o" == "\$name" ]] && exit 0; done
+    exit 1
+  fi
   exit 0
 fi
 case "\$1 \$2" in
