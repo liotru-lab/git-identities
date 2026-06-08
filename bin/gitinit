@@ -3,7 +3,7 @@
 #           then create it on GitHub and push. (Use gitclone for existing repos.)
 #
 # Usage:
-#   gitinit [--profile <alias>] [--remote <url>] [--public]
+#   gitinit [--profile <alias>] [--remote <url>] [--public] [-s|--simple]
 #           [--no-create] [--no-remote] [--no-branches]
 #           [git-init-flags...] [directory]
 #
@@ -14,6 +14,9 @@
 #   4. create test and develop branches; switch to develop
 #   5. add origin and configure develop to track origin/develop
 #   6. create the GitHub repo (via gh) and push develop, main, test
+#
+# With -s/--simple steps 4-6 use main only: no test/develop branches, stay on
+# main, track origin/main, and push only main.
 #
 # Creating the GitHub repo (step 6, on by default) needs a gh-user (4th
 # identities column) for the alias and that account authenticated in gh. The
@@ -27,6 +30,8 @@
 #   none + (no flag)      → error
 #
 # Flags:
+#   -s, --simple   main only: skip the test/develop branches, stay on main,
+#                  track origin/main, push only main
 #   --no-create    do everything locally (incl. origin) but DON'T create the
 #                  GitHub repo or push — the old default for an existing remote
 #   --no-remote    skip remote setup entirely (no origin; implies --no-create)
@@ -49,19 +54,20 @@ debug() { [[ "${GIT_IDENTITY_DEBUG:-}" == "1" ]] && echo "# gitinit: $*" >&2; re
 # ----- Parse flags -----
 # create defaults ON: gitinit is for NEW repos (use gitclone for existing ones).
 forced_alias=""; forced_remote_url=""; no_remote=0; no_branches=0
-create=1; public=0; no_create=0
+create=1; public=0; no_create=0; simple=0
 typeset -a args
 args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --profile)      forced_alias="${2:-}"; shift 2 ;;
     --remote)       forced_remote_url="${2:-}"; shift 2 ;;
+    -s|--simple)    simple=1; shift ;;
     --no-remote)    no_remote=1; shift ;;
     --no-branches)  no_branches=1; shift ;;
     --no-create)    no_create=1; shift ;;
     --public)       public=1; shift ;;
     -h|--help)
-      sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) args+=("$1"); shift ;;
@@ -156,10 +162,17 @@ git -C "$target_dir" add README.md
 git -C "$target_dir" commit -m "initial commit" >/dev/null
 
 # ----- Branches -----
-git -C "$target_dir" branch test
-git -C "$target_dir" branch develop
-git -C "$target_dir" checkout develop >/dev/null 2>&1
-debug "created branches main, test, develop (on develop)"
+# Default: scaffold test + develop and work on develop. --simple: main only.
+if [[ $simple -eq 1 ]]; then
+  track_branch=main
+  debug "--simple: main only (no test/develop)"
+else
+  track_branch=develop
+  git -C "$target_dir" branch test
+  git -C "$target_dir" branch develop
+  git -C "$target_dir" checkout develop >/dev/null 2>&1
+  debug "created branches main, test, develop (on develop)"
+fi
 
 # ----- --no-remote: stop here -----
 if [[ $no_remote -eq 1 ]]; then
@@ -187,9 +200,9 @@ fi
 # ----- Add origin + set tracking -----
 debug "git remote add origin $remote_url"
 git -C "$target_dir" remote add origin "$remote_url"
-git -C "$target_dir" config branch.develop.remote origin
-git -C "$target_dir" config branch.develop.merge refs/heads/develop
-debug "develop tracks origin/develop"
+git -C "$target_dir" config "branch.${track_branch}.remote" origin
+git -C "$target_dir" config "branch.${track_branch}.merge" "refs/heads/${track_branch}"
+debug "${track_branch} tracks origin/${track_branch}"
 
 # ----- Create the GitHub repo and push (default; disable with --no-create) -----
 if [[ $create -eq 1 ]]; then
@@ -217,17 +230,24 @@ if [[ $create -eq 1 ]]; then
   visibility="--private"
   [[ $public -eq 1 ]] && visibility="--public"
 
+  # --simple pushes main only; default pushes all three branches.
+  if [[ $simple -eq 1 ]]; then
+    push_branches=(main)
+  else
+    push_branches=(develop main test)
+  fi
+
   debug "gh repo create ${create_owner}/${repo_name} $visibility (as $ghuser)"
   if ! GH_TOKEN="$gh_token" gh repo create "${create_owner}/${repo_name}" $visibility; then
     echo "gitinit: gh repo create failed; the local repo is intact at $target_dir." >&2
-    echo "         fix the issue, then push with: git -C $target_dir push -u origin develop main test" >&2
+    echo "         fix the issue, then push with: git -C $target_dir push -u origin ${push_branches[*]}" >&2
     exit 1
   fi
 
-  debug "git push -u origin develop main test"
-  if ! git -C "$target_dir" push -u origin develop main test; then
+  debug "git push -u origin ${push_branches[*]}"
+  if ! git -C "$target_dir" push -u origin "${push_branches[@]}"; then
     echo "gitinit: push failed; the remote was created. Retry with:" >&2
-    echo "         git -C $target_dir push -u origin develop main test" >&2
+    echo "         git -C $target_dir push -u origin ${push_branches[*]}" >&2
     exit 1
   fi
   debug "created and pushed ${create_owner}/${repo_name}"

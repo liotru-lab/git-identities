@@ -233,6 +233,7 @@ behaves exactly like `git clone`.
 ```sh
 cd ~/Projects/personal && gitinit my-thing               # create on GitHub + push
 cd ~/Projects/personal && gitinit --public my-thing      # ...as a public repo
+cd ~/Projects/personal && gitinit -s my-thing            # main only (no test/develop)
 cd ~/Projects/personal && gitinit --no-create my-thing   # local scaffold only
 ```
 
@@ -244,6 +245,11 @@ initial commit → create `test` and `develop` branches → switch to `develop` 
 add `origin` (built as `git@<host>:<owner>/<name>.git` from the profile),
 configure `develop` to track `origin/develop` → **create the GitHub repo via
 `gh` and push `develop`, `main`, `test`**.
+
+**`-s` / `--simple`** trims the branch scaffold to `main` only: no `test`/`develop`
+branches, it stays on `main`, tracks `origin/main`, and pushes only `main`.
+Everything else (identity, README + commit, remote, GitHub create) is unchanged,
+so it composes with `--public`, `--no-create`, `--remote`, etc.
 
 The repo is created **private** by default (`--public` to override) under the
 profile `owner` (falling back to the `gh-user`). This needs the alias to have a
