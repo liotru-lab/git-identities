@@ -118,4 +118,27 @@ IDS
   make_gh_stub "$stub3"
   ( env PATH="$stub3:$PATH" zsh "$gi" --profile acme --no-create --remote git@ssh-acme:acme-org/quiet.git "$(_mktemp_dir)/quiet" >/dev/null 2>&1 )
   assert_no_file "no gh repo create call logged" "$stub3/gh-calls.log"
+
+  describe "gitinit -s: main only, no test/develop, tracks origin/main"
+  local s1; s1=$(_mktemp_dir)
+  ( zsh "$gi" --profile acme -s --no-create --remote git@ssh-acme:acme-org/s.git "$s1/proj" >/dev/null 2>&1 )
+  assert_file "README created"      "$s1/proj/README.md"
+  assert_eq "main branch made"      "main" "$(git -C "$s1/proj" branch --list main --format='%(refname:short)')"
+  assert_empty "no test branch"     "$(git -C "$s1/proj" branch --list test --format='%(refname:short)')"
+  assert_empty "no develop branch"  "$(git -C "$s1/proj" branch --list develop --format='%(refname:short)')"
+  assert_eq "stays on main"         "main"   "$(git -C "$s1/proj" symbolic-ref --short HEAD)"
+  assert_eq "main tracks origin"    "origin" "$(git -C "$s1/proj" config branch.main.remote)"
+  assert_eq "main merge ref"        "refs/heads/main" "$(git -C "$s1/proj" config branch.main.merge)"
+
+  describe "gitinit --simple: creates repo + pushes main only"
+  local stub4; stub4=$(_mktemp_dir)/bin
+  make_gh_stub "$stub4"
+  make_bare "$remotes" acme acme-org/simple.git >/dev/null
+  ( env PATH="$stub4:$PATH" zsh "$gi" --profile acme --simple "$h/code/simple" >/dev/null 2>&1 )
+  assert_eq "main pushed to remote" "main" \
+    "$(git -C "$remotes/acme/acme-org/simple.git" branch --list main --format='%(refname:short)' 2>/dev/null)"
+  assert_empty "develop NOT pushed" \
+    "$(git -C "$remotes/acme/acme-org/simple.git" branch --list develop --format='%(refname:short)' 2>/dev/null)"
+  assert_empty "test NOT pushed" \
+    "$(git -C "$remotes/acme/acme-org/simple.git" branch --list test --format='%(refname:short)' 2>/dev/null)"
 }
