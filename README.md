@@ -14,14 +14,17 @@
 > **Fork it and adapt it. Do not expect it to fit your setup unchanged.**
 
 Per-repo git identity management for juggling multiple GitHub accounts on one
-machine. It keeps three things in agreement for every repository:
+machine. It keeps four things in agreement for every repository:
 
 - **`user.email`** — who authors the commit
 - **the remote's SSH host** — which key/account actually pushes
 - **the prompt** — a short alias telling you, at a glance, who you are right now
+- **the GitHub owner** — the org/user the repo lives under, checked against the
+  owner your `profiles` rule declares for its directory
 
-When those disagree (e.g. you commit as one account but push through another),
-the tooling flags it and offers to fix it.
+When those disagree (e.g. you commit as one account but push through another, or
+a repo sits in a different GitHub org than its directory's rule expects), the
+tooling flags it and offers to fix it.
 
 ## Contents
 
