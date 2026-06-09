@@ -18,13 +18,13 @@ machine. It keeps four things in agreement for every repository:
 
 - **`user.email`** — who authors the commit
 - **the remote's SSH host** — which key/account actually pushes
-- **the prompt** — a short alias telling you, at a glance, who you are right now
+- **the prompt** — a short alias showing who you are at a glance
 - **the GitHub owner** — the org/user the repo lives under, checked against the
-  owner your `profiles` rule declares for its directory
+  owner your `profiles` rule expects for its directory
 
-When those disagree (e.g. you commit as one account but push through another, or
-a repo sits in a different GitHub org than its directory's rule expects), the
-tooling flags it and offers to fix it.
+When they disagree — you commit as one account but push through another, or a
+repo sits in a different org than its rule expects — the tooling flags it and
+offers to fix it.
 
 ## Contents
 
@@ -38,13 +38,14 @@ tooling flags it and offers to fix it.
 
 ## Concepts
 
-An **identity** is a triple, declared once in `identities`:
+An **identity** is a row in `identities` — up to four fields:
 
-| field      | meaning                                                      |
-| ---------- | ------------------------------------------------------------ |
-| `alias`    | short label shown in the prompt, e.g. `<liotru>`             |
-| `email`    | the git `user.email` for this account                        |
-| `ssh-host` | a `Host` alias in `~/.ssh/config` that carries the right key |
+| field      | meaning                                                          |
+| ---------- | --------------------------------------------------------------- |
+| `alias`    | short label shown in the prompt, e.g. `<liotru>`                |
+| `email`    | the git `user.email` for this account                           |
+| `ssh-host` | a `Host` alias in `~/.ssh/config` that carries the right key    |
+| `gh-user`  | *(optional)* the `gh` CLI account, used only when `gitinit` creates a repo |
 
 Each `ssh-host` maps to a block in `~/.ssh/config` that pins the SSH key:
 
@@ -56,16 +57,15 @@ Host github-personal
     IdentitiesOnly yes
 ```
 
-A repo is **OK** when its `user.email` alias matches its origin host alias.
-Every other situation is a named state (see below).
+A repo is **OK** when its `user.email` alias matches its origin SSH-host alias;
+anything else is flagged — a **mismatch** (you'd commit as one account but push
+as another) or a **warning** (missing/unknown email, host, or remote).
 
-On top of that identity check there's a second, independent axis: **owner
-drift**. The org/user a repo actually lives under (the `owner` in its origin
-URL) is a property of the repo, set once at clone/init time — not of the
-identity pushing it. But once `profiles` declares an expected `owner` for a
-path, a repo on disk under a *different* owner is config-vs-reality drift, and
-the check flags it (state `owner-drift`) even when the identity itself is OK.
-A repo can be perfectly OK on identity yet sit in the wrong GitHub org.
+Independently, the tooling checks **owner drift**. The GitHub owner in a repo's
+origin URL is a property of the repo, set once at clone/init — not of the
+identity pushing it. But once a `profiles` rule declares an expected `owner` for
+a path, a repo living under a *different* owner is flagged (`owner-drift`), even
+when the identity itself is OK.
 
 ## Repo layout
 
@@ -104,29 +104,24 @@ between managed markers — your tailored prompt config is never copied here.
 ./install.sh --no-starship  # skip the prompt integration entirely
 ```
 
-The starship step is **optional** — it's skipped automatically if `starship`
-isn't installed, or explicitly with `--no-starship`. The CLI tools
-(`git-identity`, `gitclone`, `gitinit`) work fully without it.
+The installer copies the four executables to `~/.local/bin/` and `lib.sh` +
+`starship.sh` to `~/.config/git-identity/`; creates `identities`, `profiles`,
+`ignore` from the `.example` templates **only if absent** (never overwriting
+your edits); **merges** the three starship modules into your existing
+`~/.config/starship.toml` between `# >>> git-identity >>>` markers (idempotent,
+creating a minimal config if you have none); and warns if `~/.local/bin` isn't on
+your `PATH`.
 
-The installer:
-
-- copies the three executables to `~/.local/bin/` (with `+x`)
-- copies `lib.sh` and `starship.sh` to `~/.config/git-identity/`
-- creates `identities`, `profiles`, `ignore` from the `.example` templates
-  **only if absent** (never overwrites your edits)
-- **merges** the three starship modules into your existing
-  `~/.config/starship.toml` between `# >>> git-identity >>>` markers
-  (idempotent; creates a minimal config if you don't have one), and warns if
-  your `format` doesn't reference them or `command_timeout` is unset
-- warns if `~/.local/bin` isn't on your `PATH`
+The starship step is optional — auto-skipped if `starship` isn't installed, or
+with `--no-starship`. The CLI tools work fully without it.
 
 > [!NOTE]
 > Starship has no include mechanism, so the modules must live in your single
-> `starship.toml`. Because of that, two things stay yours to maintain: the
-> `${custom.git_email_*}` lines in your `format`, and `command_timeout = 3000`.
-> `install.sh` injects the module blocks and tells you if either is missing.
+> `starship.toml`. Two things stay yours to maintain: the `${custom.git_email_*}`
+> lines in your `format`, and `command_timeout = 3000`. `install.sh` injects the
+> module blocks and tells you if either is missing.
 
-Then configure your data files:
+Then fill in your data files and reload the shell:
 
 ```sh
 $EDITOR ~/.config/git-identity/identities   # your accounts
@@ -142,10 +137,12 @@ exec zsh                                     # reload prompt + PATH
 ```
 
 Uninstall strips only the managed marker block from `starship.toml`; the rest of
-your prompt config is untouched (the `${custom.git_email_*}` lines in your
-`format` are left for you to remove).
+your prompt config — including the `${custom.git_email_*}` lines — is left for
+you to remove.
 
 ## Configuration files
+
+All three live only in `~/.config/git-identity/`.
 
 ### `identities` — the source of truth
 
@@ -155,16 +152,13 @@ work       you@company.com        github.com        you-at-work
 personal   you@personal.example   github-personal   you
 ```
 
-Adding an account is a one-line edit here — no script changes. Everything
-(prompt, sweep, clone, init) reads this table.
+One line per account; everything (prompt, sweep, clone, init) reads this table,
+so adding an account is a one-line edit — no script changes. The 4th column
+**`gh-user`** is optional — the GitHub username as `gh` knows it, needed only
+when `gitinit` creates the remote repo, to pick which authenticated `gh` account
+to use. Three-column lines work for everything else (and `gitinit --no-create`).
 
-The 4th column, **`gh-user`**, is optional: it's the GitHub username as known to
-the [`gh`](https://cli.github.com) CLI, and is only needed when `gitinit` creates
-the remote repo (its default), to pick which authenticated `gh` account to use.
-Three-column lines (no `gh-user`) remain valid for every other command, and with
-`gitinit --no-create`.
-
-### `profiles` — directory → account rules (for `gitclone` / `gitinit`)
+### `profiles` — directory → account rules
 
 ```text
 # path-glob               alias      owner
@@ -174,9 +168,9 @@ Three-column lines (no `gh-user`) remain valid for every other command, and with
 ```
 
 Matched **top-to-bottom, first match wins** — put the catch-all last.
-`owner` is the GitHub org/user used to build remote URLs in `gitinit`, and it
-doubles as the **expected owner** for `git-identity`'s owner-drift check: a repo
-whose origin lives under a different owner than its path's rule is flagged.
+`gitclone`/`gitinit` use these to pick the identity and build remote URLs, and
+the `owner` doubles as the **expected owner** for `git-identity`'s owner-drift
+check.
 
 ### `ignore` — repos to skip during `--sweep`
 
@@ -191,34 +185,25 @@ whose origin lives under a different owner than its path's rule is flagged.
 ### `git-identity` — check & fix
 
 ```sh
-git-identity                          # detailed report for the current repo
-git-identity --auth                   # ...also test SSH auth to the host
-git-identity --sweep                  # sweep the current dir (PATH defaults to .)
-git-identity --sweep ~/Projects       # one line per repo found
-git-identity --sweep ~/Projects --porcelain      # tab-separated, for piping
-git-identity --sweep ~/Projects --fix            # interactive fix, repo by repo
-git-identity --sweep ~/Projects --fix --include-ignored   # revisit ignored repos
-
-  git-identity --sweep ~/Projects --fix --dry-run  # preview, write nothing
+git-identity                                 # detailed report for the current repo
+git-identity --auth                          # ...also test SSH auth to the host
+git-identity --sweep [PATH]                  # one line per repo under PATH (default: .)
+git-identity --sweep ~/Projects --porcelain  # tab-separated, for piping
+git-identity --sweep ~/Projects --fix        # interactive fix, repo by repo
 ```
 
-In `--fix` mode each problem repo offers context-aware actions: switch email to
+Other sweep flags: `--include-ignored` (revisit ignored repos), `--dry-run`
+(preview, write nothing), `--ignore-file PATH`, `--no-ignore`.
+
+In `--fix` mode each flagged repo offers context-aware actions — switch email to
 the canonical one, rewrite the remote host, convert HTTPS→SSH, **skip** (just
-this run), or **ignore** (persist to the `ignore` file). All applied changes are
-logged to `~/.config/git-identity/migrate.log`.
-
-For **owner drift** the fix offers two paths:
-
-- **(l) local only** — repoint `origin` to the expected owner. Use this when the
-  repo *already* lives under the new owner on GitHub and only the local remote is
-  stale.
-- **(t) transfer** — actually move the repo on GitHub
-  (`gh api repos/<owner>/<repo>/transfer`) to the expected owner, then repoint
-  `origin`. It acts as the identity's `gh-user` account (token fetched
-  per-command, so your global `gh` state is untouched — same mechanism as
-  `gitinit`), asks for an extra confirmation since transfers are hard to undo,
-  and is only offered when `gh` is installed and the alias has a `gh-user`.
-  `--dry-run` prints both commands without running them.
+this run), or **ignore** (persist to the `ignore` file). For **owner drift** it
+offers either **(l)** repoint `origin` to the expected owner (when the repo
+already moved on GitHub and only the local remote is stale), or **(t)** transfer
+the repo on GitHub (`gh api repos/<owner>/<repo>/transfer`) then repoint — gated
+on `gh` being installed and the alias having a `gh-user`, with an extra confirm
+since transfers are hard to undo. All applied changes are logged to
+`~/.config/git-identity/migrate.log`.
 
 ### `gitclone` — clone with identity
 
@@ -235,96 +220,64 @@ behaves exactly like `git clone`.
 ### `gitinit` — scaffold a new repo (and create it on GitHub)
 
 ```sh
-cd ~/Projects/personal && gitinit my-thing               # create on GitHub + push
-cd ~/Projects/personal && gitinit --public my-thing      # ...as a public repo
-cd ~/Projects/personal && gitinit -s my-thing            # main only (no test/develop)
-cd ~/Projects/personal && gitinit --no-create my-thing   # local scaffold only
+cd ~/Projects/personal && gitinit my-thing   # create on GitHub + push
+gitinit --public my-thing                     # ...public instead of private
+gitinit -s my-thing                           # main only (no test/develop)
+gitinit --no-create my-thing                  # local scaffold + origin, no GitHub
+gitinit --no-remote /tmp/scratch              # local only, no origin
 ```
 
-`gitinit` is for **new** repos (use [`gitclone`](#gitclone--clone-with-identity)
-for existing ones), so by default it goes all the way to GitHub.
+For **new** repos (use `gitclone` for existing ones). Default flow:
+`git init -b main` → set `user.email` → `README.md` + initial commit → create
+`test` and `develop` branches and switch to `develop` → add `origin`
+(`git@<host>:<owner>/<name>.git`, built from the profile) → **create the private
+GitHub repo via `gh` and push `develop`, `main`, `test`**. The repo is created
+under the profile `owner` (falling back to the `gh-user`); the right `gh` account
+is selected per-command, so your global `gh` state is left untouched.
 
-Default flow: `git init -b main` → set `user.email` → create `README.md` +
-initial commit → create `test` and `develop` branches → switch to `develop` →
-add `origin` (built as `git@<host>:<owner>/<name>.git` from the profile),
-configure `develop` to track `origin/develop` → **create the GitHub repo via
-`gh` and push `develop`, `main`, `test`**.
+Flags:
 
-**`-s` / `--simple`** trims the branch scaffold to `main` only: no `test`/`develop`
-branches, it stays on `main`, tracks `origin/main`, and pushes only `main`.
-Everything else (identity, README + commit, remote, GitHub create) is unchanged,
-so it composes with `--public`, `--no-create`, `--remote`, etc.
-
-The repo is created **private** by default (`--public` to override) under the
-profile `owner` (falling back to the `gh-user`). This needs the alias to have a
-`gh-user` (4th `identities` column) and that account authenticated in `gh`
-(`gh auth login`) — the right account is selected per-command, so your global
-`gh` state is left untouched.
-
-#### Stopping early: `--no-create` vs `--no-remote`
-
-These sound similar but stop at different points:
-
-- **`--no-create`** — do the full local scaffold **including adding `origin`**,
-  but don't create the GitHub repo or push. Use it when the remote already
-  exists. Because it still wires up `origin`, it must build a remote URL, so it
-  needs a `profiles` match (for the `owner`) **or** an explicit `--remote URL` —
-  otherwise it errors with *"cannot determine remote URL"*. (Plain `gitinit`
-  with no flags needs this too.)
-- **`--no-remote`** — skip the remote step entirely: no `origin`, no creation,
-  no push. Nothing to resolve, so it works anywhere (e.g. a throwaway repo in
-  `/tmp`). Reach for this when you don't want a remote at all.
+- **`-s`, `--simple`** — `main` only: no `test`/`develop`, stays on `main`, tracks
+  and pushes only `main`. Composes with everything below.
+- **`--public`** — create a public repo (default: private).
+- **`--no-create`** — full local scaffold **including `origin`**, but don't create
+  the GitHub repo or push (the remote already exists). Still builds the URL, so it
+  needs an owner source: a `profiles` match or `--remote URL`.
+- **`--remote URL`** — supply the remote URL explicitly (overrides the built one).
+- **`--no-remote`** — skip the remote entirely (no `origin`, creation, or push);
+  works anywhere, e.g. a throwaway repo in `/tmp`.
+- **`--no-branches`** — just `init` + `user.email`.
+- **`--profile <alias>`** — force the identity instead of matching `profiles`.
 
 `--no-remote` and `--no-branches` both imply `--no-create` (you can't push
 without a remote or commits).
 
-```sh
-gitinit my-thing                       # create on GitHub + push (needs owner)
-gitinit --no-create my-thing           # local + origin, no GitHub  (needs owner)
-gitinit --no-create --remote URL dir   # ...supply the owner/URL explicitly
-gitinit --no-remote /tmp/scratch       # local only, no origin      (works anywhere)
-```
-
-Flags: `--no-create` (skip GitHub repo creation + push), `--remote URL`
-(override the built URL), `--no-remote` (skip remote setup entirely),
-`--no-branches` (just init + email), `--public` (create a public repo),
-`--profile <alias>`.
-
 ### `git-identity-doctor` — verify your setup
-
-Run after `install.sh` (or any time things look off) to sanity-check the
-installation and configuration:
 
 ```sh
 git-identity-doctor              # offline checks
-git-identity-doctor --auth       # also test SSH auth, gh token scopes, profile owners
-git-identity-doctor --init-test          # end-to-end: really create + push + delete
-git-identity-doctor --init-test liotru   # ...under a specific identity
+git-identity-doctor --auth       # + SSH auth, gh token scopes, profile-owner existence
+git-identity-doctor --init-test [alias]   # end-to-end: really create + push + delete
 ```
 
-It checks that the executables are on your `PATH`, the config files exist, the
-installed `lib.sh` is current enough to perform the owner-drift check (a stale
-install fails here with a "re-run install.sh" hint), the `identities` table
-parses (flagging malformed lines and duplicates), every `ssh-host` has a matching
-`Host` block in `~/.ssh/config`, `profiles` rules reference known aliases, and
-`gh` is installed with each `gh-user` authenticated.
+Offline it checks that the executables are on your `PATH`, the config files
+exist, the installed `lib.sh` is current enough for the owner-drift check (a
+stale install fails with a "re-run install.sh" hint), `identities` parses
+(flagging malformed lines and duplicates), every `ssh-host` has a matching `Host`
+block, `profiles` aliases are known, and `gh` is installed with each `gh-user`
+authenticated.
 
-With **`--auth`** it additionally opens SSH connections per host, prints each
-account's actual `gh` token scopes (failing if the `repo` scope `gitinit` needs
-is missing, noting when `delete_repo` is absent), and verifies that every owner
-declared in `profiles` actually exists on GitHub — catching a typo'd owner
-(`reachnetap` vs `reachnetapp`) that would otherwise surface as confusing
-owner-drift on every repo under that rule.
+**`--auth`** adds network checks: SSH auth per host, each token's actual `gh`
+scopes (needs `repo`), and that every owner declared in `profiles` actually
+exists on GitHub — catching a typo'd owner (`reachnetap` vs `reachnetapp`) that
+would otherwise surface as confusing owner-drift on every repo under that rule.
 
-With **`--init-test [alias]`** (implies `--auth`) it runs the real thing
-end-to-end: `gitinit` creates a throwaway **private** repo on GitHub, pushes all
-three branches, then deletes it — so it genuinely fails if `gh` permissions are
-wrong. It tests under the given `alias` if you name one, otherwise the first
-identity with a `gh-user`. Deleting the test repo needs the `delete_repo` scope
-(`gh auth refresh -h github.com -s delete_repo`); without it the test still
-creates + pushes but reports the repo for manual deletion.
-
-Exit status is non-zero if any check fails, so it works in scripts too.
+**`--init-test [alias]`** (implies `--auth`) runs the real thing end-to-end:
+`gitinit` creates a throwaway private repo, pushes, then deletes it — so it
+genuinely fails if `gh` permissions are wrong. Deleting needs the `delete_repo`
+scope (`gh auth refresh -h github.com -s delete_repo`); without it the repo is
+left for manual cleanup. Tests under the given `alias`, else the first identity
+with a `gh-user`. Exit status is non-zero if any check fails.
 
 ### Prompt
 
@@ -342,14 +295,13 @@ The starship prompt shows the active identity in angle brackets after the branch
 
 - **zsh** (`/bin/zsh`) — all scripts are zsh; uses arrays, `vared`, `${~var}`.
 - **git 2.28+** (for `git init -b`).
-- **starship** for the prompt integration.
-- **gh** (GitHub CLI) for `gitinit`'s repo creation and `git-identity --fix`'s
-  owner-drift transfer, with each account's token holding the `repo` scope (and
-  `delete_repo` only if you use `git-identity-doctor --init-test`'s auto-cleanup).
-  A transfer additionally needs admin on the repo and permission to create repos
-  in the target owner.
-- A `Host` block in `~/.ssh/config` for every `ssh-host` in `identities`,
-  each with its own `IdentityFile` and `IdentitiesOnly yes`.
+- **starship** — for the prompt integration only.
+- **gh** (GitHub CLI) — for `gitinit`'s repo creation and `git-identity --fix`'s
+  owner-drift transfer. Each account's token needs the `repo` scope (and
+  `delete_repo` only for `git-identity-doctor --init-test`'s cleanup); a transfer
+  also needs admin on the repo and create rights in the target owner.
+- A `Host` block in `~/.ssh/config` for every `ssh-host` in `identities`, each
+  with its own `IdentityFile` and `IdentitiesOnly yes`.
 
 ## License
 
