@@ -3,8 +3,8 @@
 #           then create it on GitHub and push. (Use gitclone for existing repos.)
 #
 # Usage:
-#   gitinit [--profile <alias>] [--remote <url>] [--public] [-s|--simple]
-#           [--no-create] [--no-remote] [--no-branches]
+#   gitinit [--profile <alias>] [--owner <org/user>] [--remote <url>] [--public]
+#           [-s|--simple] [--no-create] [--no-remote] [--no-branches]
 #           [git-init-flags...] [directory]
 #
 # Default flow:
@@ -20,16 +20,21 @@
 #
 # Creating the GitHub repo (step 6, on by default) needs a gh-user (4th
 # identities column) for the alias and that account authenticated in gh. The
-# repo is created under the profile owner (falling back to gh-user), private
-# unless --public.
+# repo is created under the resolved owner, private unless --public.
+#
+# Owner resolution (who the repo is created/pushed under):
+#   with --remote URL     → taken from that URL
+#   else --owner <o>      → explicit
+#   else profile match    → the rule's owner column
+#   else                  → the alias's own gh-user namespace
 #
 # URL resolution for the remote:
 #   --remote URL          → use as-is (with host rewrite by alias)
-#   profile match         → git@<host(alias)>:<owner>/<basename>.git
-#   none + --no-remote    → skip remote setup
-#   none + (no flag)      → error
+#   else                  → git@<host(alias)>:<owner>/<basename>.git
+#   --no-remote           → skip remote setup entirely
 #
 # Flags:
+#   --owner <org/user>  create/push under this owner (else profile, else gh-user)
 #   -s, --simple   main only: skip the test/develop branches, stay on main,
 #                  track origin/main, push only main
 #   --no-create    do everything locally (incl. origin) but DON'T create the
@@ -53,7 +58,7 @@ debug() { [[ "${GIT_IDENTITY_DEBUG:-}" == "1" ]] && echo "# gitinit: $*" >&2; re
 
 # ----- Parse flags -----
 # create defaults ON: gitinit is for NEW repos (use gitclone for existing ones).
-forced_alias=""; forced_remote_url=""; no_remote=0; no_branches=0
+forced_alias=""; forced_remote_url=""; forced_owner=""; no_remote=0; no_branches=0
 create=1; public=0; no_create=0; simple=0
 typeset -a args
 args=()
@@ -63,13 +68,15 @@ while [[ $# -gt 0 ]]; do
                     forced_alias="$2"; shift 2 ;;
     --remote)       [[ $# -ge 2 ]] || { echo "gitinit: --remote needs a URL" >&2; exit 2; }
                     forced_remote_url="$2"; shift 2 ;;
+    --owner)        [[ $# -ge 2 ]] || { echo "gitinit: --owner needs an org/user" >&2; exit 2; }
+                    forced_owner="$2"; shift 2 ;;
     -s|--simple)    simple=1; shift ;;
     --no-remote)    no_remote=1; shift ;;
     --no-branches)  no_branches=1; shift ;;
     --no-create)    no_create=1; shift ;;
     --public)       public=1; shift ;;
     -h|--help)
-      sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) args+=("$1"); shift ;;
@@ -110,6 +117,9 @@ case "$abs_target" in
 esac
 
 # ----- Resolve alias + owner -----
+# Owner precedence: --owner  >  profile owner  >  the alias's own gh-user
+# namespace. That last fallback makes `gitinit --profile <alias> <dir>` create
+# under your own account with no profile and no --remote needed.
 match_profile "$abs_target"
 alias=""; owner=""
 if [[ -n "$forced_alias" ]]; then
@@ -118,6 +128,11 @@ if [[ -n "$forced_alias" ]]; then
 else
   alias="$pf_alias"
   owner="$pf_owner"
+fi
+if [[ -n "$forced_owner" ]]; then
+  owner="$forced_owner"
+elif [[ -z "$owner" && -n "$alias" ]]; then
+  owner="$(alias_to_ghuser "$alias")"
 fi
 debug "alias=$alias owner=$owner"
 
@@ -190,12 +205,14 @@ if [[ -n "$forced_remote_url" ]]; then
     target_host=$(alias_to_host "$alias")
     [[ "${match[1]}" != "$target_host" ]] && remote_url="git@${target_host}:${match[2]}"
   fi
+  # Keep the GitHub create target consistent with the explicit URL.
+  owner="$(parse_remote_owner "$remote_url")"
 elif [[ -n "$alias" && -n "$owner" ]]; then
   remote_url="git@$(alias_to_host "$alias"):${owner}/${repo_name}.git"
 fi
 
 if [[ -z "$remote_url" ]]; then
-  echo "gitinit: cannot determine remote URL (profile gave alias='$alias' owner='$owner'); use --remote URL or --no-remote" >&2
+  echo "gitinit: cannot determine remote URL (alias='$alias' owner='$owner'); pass --owner <org/user>, --remote <URL>, or --no-remote" >&2
   exit 2
 fi
 
