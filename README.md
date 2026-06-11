@@ -221,33 +221,41 @@ behaves exactly like `git clone`.
 
 ```sh
 cd ~/Projects/personal && gitinit my-thing   # create on GitHub + push
-gitinit --public my-thing                     # ...public instead of private
-gitinit -s my-thing                           # main only (no test/develop)
-gitinit --no-create my-thing                  # local scaffold + origin, no GitHub
-gitinit --no-remote /tmp/scratch              # local only, no origin
+gitinit --profile personal my-thing           # no profile match? name the identity
+gitinit --profile work --owner some-org thing  # ...and create it under some-org
+gitinit --public my-thing                      # public instead of private
+gitinit -s my-thing                            # main only (no test/develop)
+gitinit --no-remote /tmp/scratch               # local only, no origin
 ```
 
 For **new** repos (use `gitclone` for existing ones). Default flow:
 `git init -b main` → set `user.email` → `README.md` + initial commit → create
 `test` and `develop` branches and switch to `develop` → add `origin`
-(`git@<host>:<owner>/<name>.git`, built from the profile) → **create the private
-GitHub repo via `gh` and push `develop`, `main`, `test`**. The repo is created
-under the profile `owner` (falling back to the `gh-user`); the right `gh` account
-is selected per-command, so your global `gh` state is left untouched.
+(`git@<host>:<owner>/<name>.git`) → **create the private GitHub repo via `gh` and
+push `develop`, `main`, `test`**. The right `gh` account is selected per-command,
+so your global `gh` state is left untouched.
+
+The **owner** (who the repo is created and pushed under) is taken from the
+`--remote` URL when you pass one; otherwise it resolves as **`--owner` → the
+`profiles` rule's owner → the alias's own `gh-user` namespace**. That last
+fallback means `gitinit --profile <alias> <dir>` works with no profile and no
+`--remote` — it just creates under your own account.
 
 Flags:
 
+- **`--owner <org/user>`** — create/push under this owner (overrides the profile;
+  defaults to the alias's `gh-user`).
+- **`--profile <alias>`** — force the identity instead of matching `profiles`.
 - **`-s`, `--simple`** — `main` only: no `test`/`develop`, stays on `main`, tracks
   and pushes only `main`. Composes with everything below.
 - **`--public`** — create a public repo (default: private).
 - **`--no-create`** — full local scaffold **including `origin`**, but don't create
-  the GitHub repo or push (the remote already exists). Still builds the URL, so it
-  needs an owner source: a `profiles` match or `--remote URL`.
-- **`--remote URL`** — supply the remote URL explicitly (overrides the built one).
+  the GitHub repo or push (the remote already exists).
+- **`--remote URL`** — supply the full remote URL explicitly (host still rewritten
+  to the alias's; its owner becomes the create target).
 - **`--no-remote`** — skip the remote entirely (no `origin`, creation, or push);
   works anywhere, e.g. a throwaway repo in `/tmp`.
 - **`--no-branches`** — just `init` + `user.email`.
-- **`--profile <alias>`** — force the identity instead of matching `profiles`.
 
 `--no-remote` and `--no-branches` both imply `--no-create` (you can't push
 without a remote or commits).

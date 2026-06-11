@@ -147,4 +147,47 @@ IDS
     "$(git -C "$remotes/acme/acme-org/simple.git" branch --list develop --format='%(refname:short)' 2>/dev/null)"
   assert_empty "test NOT pushed" \
     "$(git -C "$remotes/acme/acme-org/simple.git" branch --list test --format='%(refname:short)' 2>/dev/null)"
+
+  # --- Owner resolution: --owner > profile owner > gh-user fallback ---
+  # NB: read the RAW stored URL via `git config` — `git remote get-url` would
+  # apply the fixture's insteadOf rewrites once add_local_remotes has run above.
+  describe "gitinit: owner defaults to the alias's gh-user (no profile, no --owner)"
+  local o1; o1=$(_mktemp_dir)   # outside $h/code, so no profile matches
+  ( zsh "$gi" --profile acme --no-create "$o1/proj" >/dev/null 2>&1 )
+  assert_eq "URL owner falls back to gh-user" "git@ssh-acme:gh-acme/proj.git" \
+    "$(git -C "$o1/proj" config remote.origin.url 2>/dev/null)"
+
+  describe "gitinit --owner: overrides, builds URL under that owner"
+  local o2; o2=$(_mktemp_dir)
+  ( zsh "$gi" --profile acme --owner some-org --no-create "$o2/proj" >/dev/null 2>&1 )
+  assert_eq "URL owner is --owner value" "git@ssh-acme:some-org/proj.git" \
+    "$(git -C "$o2/proj" config remote.origin.url 2>/dev/null)"
+
+  describe "gitinit --owner: wins over a matching profile owner"
+  ( zsh "$gi" --owner override-org --no-create "$h/code/ov" >/dev/null 2>&1 )  # profile says acme-org
+  assert_eq "--owner beats profile owner" "git@ssh-acme:override-org/ov.git" \
+    "$(git -C "$h/code/ov" config remote.origin.url 2>/dev/null)"
+
+  describe "gitinit --owner: creates the GitHub repo under that owner"
+  local stub5; stub5=$(_mktemp_dir)/bin
+  make_gh_stub "$stub5"
+  make_bare "$remotes" acme some-org/created2.git >/dev/null
+  ( env PATH="$stub5:$PATH" zsh "$gi" --profile acme --owner some-org "$(_mktemp_dir)/created2" >/dev/null 2>&1 )
+  assert_eq "gh repo create uses --owner" "gh repo create some-org/created2 --private" \
+    "$(cat "$stub5/gh-calls.log" 2>/dev/null)"
+
+  describe "gitinit --remote: its URL owner becomes the create target"
+  # Owner in the --remote URL (other-org) differs from the gh-user (gh-acme);
+  # the repo must be created under other-org, not the gh-user namespace.
+  local stub6; stub6=$(_mktemp_dir)/bin
+  make_gh_stub "$stub6"
+  make_bare "$remotes" acme other-org/remoted.git >/dev/null
+  ( env PATH="$stub6:$PATH" zsh "$gi" --profile acme \
+      --remote git@ssh-acme:other-org/remoted.git "$(_mktemp_dir)/remoted" >/dev/null 2>&1 )
+  assert_eq "gh repo create uses the --remote URL's owner" \
+    "gh repo create other-org/remoted --private" \
+    "$(cat "$stub6/gh-calls.log" 2>/dev/null)"
+
+  describe "gitinit --owner needs a value → exit 2"
+  assert_status "--owner with no value" 2 zsh "$gi" --owner
 }

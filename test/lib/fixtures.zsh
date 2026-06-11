@@ -110,7 +110,8 @@ mkrepo() {
 #   - anything else              → exits 0.
 # Tests read gh-calls.log to assert what gitinit/git-identity asked gh to do.
 make_gh_stub() {
-  local bindir="$1" authed="${2:-gh-acme gh-globex}"
+  # Default only when UNSET — an explicit empty "" means "nobody authenticated".
+  local bindir="$1" authed="${2-gh-acme gh-globex}"
   mkdir -p "$bindir"
   cat > "$bindir/gh" <<STUB
 #!/bin/zsh
