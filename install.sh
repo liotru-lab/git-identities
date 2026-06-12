@@ -5,14 +5,16 @@
 #   ./install.sh --link          symlink code files to this repo instead of
 #                                copying (so `git pull` updates your live tooling)
 #   ./install.sh --no-starship   skip the starship prompt integration entirely
+#   ./install.sh --no-skill      skip installing the Claude Code skill
 #
-# Starship integration is auto-skipped if the `starship` binary isn't found.
+# Starship integration is auto-skipped if the `starship` binary isn't found;
+# the Claude Code skill is auto-skipped if Claude Code isn't detected.
 #
-# Code files (bin/*, lib.sh, starship.sh) are always refreshed. Data files
-# (identities, profiles, ignore) are created from templates only if they don't
-# already exist. The starship modules are MERGED into your existing
-# ~/.config/starship.toml inside managed markers — the rest of your prompt
-# config is left untouched.
+# Code files (bin/*, lib.sh, starship.sh) are always refreshed, as is the
+# Claude Code skill. Data files (identities, profiles, ignore) are created from
+# templates only if they don't already exist. The starship modules are MERGED
+# into your existing ~/.config/starship.toml inside managed markers — the rest
+# of your prompt config is left untouched.
 
 set -e
 set -u
@@ -22,18 +24,21 @@ BIN_DST="$HOME/.local/bin"
 CFG_DST="$HOME/.config/git-identity"
 STARSHIP_DST="$HOME/.config/starship.toml"
 SNIPPET="$REPO/config/starship/git-identity.toml"
+SKILL_SRC="$REPO/skills/git-identity/SKILL.md"
+SKILL_DST_DIR="$HOME/.claude/skills/git-identity"
 BEGIN="# >>> git-identity >>>"
 END="# <<< git-identity <<<"
 
 info() { print -r -- "  $*" }
 warn() { print -r -- "⚠ $*" }
 
-link=0; no_starship=0
+link=0; no_starship=0; no_skill=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --link)        link=1; shift ;;
     --no-starship) no_starship=1; shift ;;
-    -h|--help)     sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --no-skill)    no_skill=1; shift ;;
+    -h|--help)     sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) warn "unknown arg: $1"; shift ;;
   esac
 done
@@ -142,6 +147,19 @@ elif ! command -v starship >/dev/null 2>&1; then
   info "(install starship and re-run to add them)"
 else
   merge_starship
+fi
+
+# --- Claude Code skill -> ~/.claude/skills (optional) ---
+# Makes Claude Code prefer the git-identity wrappers. Auto-skipped when Claude
+# Code isn't detected (no `claude` binary and no ~/.claude dir).
+if (( no_skill )); then
+  info "skipped Claude Code skill (--no-skill)"
+elif ! command -v claude >/dev/null 2>&1 && [[ ! -d "$HOME/.claude" ]]; then
+  info "Claude Code not detected — skipped skill"
+  info "(install Claude Code and re-run, or pass --no-skill to silence)"
+else
+  mkdir -p "$SKILL_DST_DIR"
+  deploy "$SKILL_SRC" "$SKILL_DST_DIR/SKILL.md"
 fi
 
 print
