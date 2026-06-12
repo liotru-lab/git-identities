@@ -1,7 +1,7 @@
 #!/bin/zsh
 # uninstall.sh — remove the git-identity toolkit from your home config.
 #
-#   ./uninstall.sh           remove code + starship modules; keep your data
+#   ./uninstall.sh           remove code + starship modules + skill; keep data
 #   ./uninstall.sh --purge    also delete ~/.config/git-identity (identities,
 #                             profiles, ignore, migrate.log)
 
@@ -10,6 +10,7 @@ set -u
 BIN_DST="$HOME/.local/bin"
 CFG_DST="$HOME/.config/git-identity"
 STARSHIP_DST="$HOME/.config/starship.toml"
+SKILL_DST_DIR="$HOME/.claude/skills/git-identity"
 BEGIN="# >>> git-identity >>>"
 END="# <<< git-identity <<<"
 
@@ -22,7 +23,7 @@ print "Removing git-identity toolkit..."
 print
 
 # executables
-for f in git-identity gitclone gitinit; do
+for f in git-identity gitclone gitinit git-identity-doctor; do
   if [[ -e "$BIN_DST/$f" || -L "$BIN_DST/$f" ]]; then
     rm -f "$BIN_DST/$f"; info "removed $BIN_DST/$f"
   fi
@@ -34,6 +35,14 @@ for f in lib.sh starship.sh; do
     rm -f "$CFG_DST/$f"; info "removed $CFG_DST/$f"
   fi
 done
+
+# Claude Code skill — remove our skill dir (leave other skills untouched)
+if [[ -e "$SKILL_DST_DIR/SKILL.md" || -L "$SKILL_DST_DIR/SKILL.md" ]]; then
+  rm -f "$SKILL_DST_DIR/SKILL.md"
+  rmdir "$SKILL_DST_DIR" 2>/dev/null   # only if now empty
+  rmdir "${SKILL_DST_DIR:h}" 2>/dev/null   # ~/.claude/skills if now empty
+  info "removed $SKILL_DST_DIR/SKILL.md"
+fi
 
 # starship modules — strip the managed block, leave the rest of the config intact
 if [[ -f "$STARSHIP_DST" ]] && grep -qF "$BEGIN" "$STARSHIP_DST"; then

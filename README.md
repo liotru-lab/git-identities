@@ -33,6 +33,7 @@ offers to fix it.
 - [Install](#install)
 - [Configuration files](#configuration-files)
 - [Usage](#usage)
+- [Claude Code skill](#claude-code-skill)
 - [Requirements](#requirements)
 - [License](#license)
 
@@ -78,6 +79,8 @@ when the identity itself is OK.
 │   ├── gitclone                    clone with the right identity applied
 │   ├── gitinit                     init with identity + branch + remote scaffold
 │   └── git-identity-doctor         verify install + config (run after install)
+├── skills/
+│   └── git-identity/SKILL.md       Claude Code skill → ~/.claude/skills/
 └── config/
     ├── starship/
     │   └── git-identity.toml        the 3 prompt modules, MERGED into
@@ -92,9 +95,11 @@ when the identity itself is OK.
 
 **Code** (`bin/*`, `lib.sh`, `starship.sh`) is deployed from this repo. The
 **starship modules** are merged into your existing `~/.config/starship.toml`
-between managed markers — your tailored prompt config is never copied here.
-**Data** (`identities`, `profiles`, `ignore`) lives only in
-`~/.config/git-identity/` — your real emails/orgs never enter this repo.
+between managed markers — your tailored prompt config is never copied here. The
+**Claude Code skill** is deployed to `~/.claude/skills/` so Claude prefers the
+wrappers (see [Claude Code skill](#claude-code-skill)). **Data** (`identities`,
+`profiles`, `ignore`) lives only in `~/.config/git-identity/` — your real
+emails/orgs never enter this repo.
 
 ## Install
 
@@ -102,6 +107,7 @@ between managed markers — your tailored prompt config is never copied here.
 ./install.sh                # copy files into place
 ./install.sh --link         # symlink code to this repo (git pull updates tooling)
 ./install.sh --no-starship  # skip the prompt integration entirely
+./install.sh --no-skill     # skip installing the Claude Code skill
 ```
 
 The installer copies the four executables to `~/.local/bin/` and `lib.sh` +
@@ -109,11 +115,13 @@ The installer copies the four executables to `~/.local/bin/` and `lib.sh` +
 `ignore` from the `.example` templates **only if absent** (never overwriting
 your edits); **merges** the three starship modules into your existing
 `~/.config/starship.toml` between `# >>> git-identity >>>` markers (idempotent,
-creating a minimal config if you have none); and warns if `~/.local/bin` isn't on
-your `PATH`.
+creating a minimal config if you have none); installs the Claude Code skill to
+`~/.claude/skills/`; and warns if `~/.local/bin` isn't on your `PATH`.
 
-The starship step is optional — auto-skipped if `starship` isn't installed, or
-with `--no-starship`. The CLI tools work fully without it.
+Both integrations are optional: the **starship** step is auto-skipped if
+`starship` isn't installed (or with `--no-starship`), and the **Claude Code
+skill** is auto-skipped if Claude Code isn't detected (or with `--no-skill`). The
+CLI tools work fully without either.
 
 > [!NOTE]
 > Starship has no include mechanism, so the modules must live in your single
@@ -132,13 +140,13 @@ exec zsh                                     # reload prompt + PATH
 ### Uninstall
 
 ```sh
-./uninstall.sh          # remove code, strip the starship managed block, keep data
+./uninstall.sh          # remove code + skill, strip the starship block, keep data
 ./uninstall.sh --purge  # also delete ~/.config/git-identity
 ```
 
-Uninstall strips only the managed marker block from `starship.toml`; the rest of
-your prompt config — including the `${custom.git_email_*}` lines — is left for
-you to remove.
+Uninstall removes the executables and the Claude Code skill, and strips only the
+managed marker block from `starship.toml` — the rest of your prompt config
+(including the `${custom.git_email_*}` lines) is left for you to remove.
 
 ## Configuration files
 
@@ -299,11 +307,32 @@ The starship prompt shows the active identity in angle brackets after the branch
 
 `GIT_IDENTITY_DEBUG=1` in front of `gitclone`/`gitinit` prints decisions.
 
+## Claude Code skill
+
+The repo ships a [Claude Code](https://claude.com/claude-code) skill at
+`skills/git-identity/SKILL.md`. `install.sh` deploys it to
+`~/.claude/skills/git-identity/` (auto-skipped when Claude Code isn't detected,
+or with `--no-skill`), so Claude prefers the wrappers — `gitclone` over
+`git clone`, `gitinit` over `git init`, and `git-identity` for identity/owner
+checks. It degrades gracefully (points back at `install.sh`) on a machine where
+the commands aren't installed.
+
+A skill is *model-invoked* from its description, so it makes Claude reach for the
+wrappers when your request matches. To make that the hard default, also add a
+line to your `CLAUDE.md` (user-level `~/.claude/CLAUDE.md` or per-project):
+
+```markdown
+When setting up git repos, prefer the git-identity wrappers: `gitclone` instead
+of `git clone`, `gitinit` instead of `git init`, and `git-identity --fix` to
+check/fix identity & owner. Fall back to plain git if those commands are absent.
+```
+
 ## Requirements
 
 - **zsh** (`/bin/zsh`) — all scripts are zsh; uses arrays, `vared`, `${~var}`.
 - **git 2.28+** (for `git init -b`).
 - **starship** — for the prompt integration only.
+- **Claude Code** — optional; only to use the bundled skill.
 - **gh** (GitHub CLI) — for `gitinit`'s repo creation and `git-identity --fix`'s
   owner-drift transfer. Each account's token needs the `repo` scope (and
   `delete_repo` only for `git-identity-doctor --init-test`'s cleanup); a transfer
