@@ -62,10 +62,11 @@ parse_remote_owner() {
 }
 
 # Match a path against the profiles file (first match wins). Sets the globals
-# pf_alias / pf_owner (both empty when nothing matches). Shared by gitclone,
-# gitinit and detect_identity's owner-drift check.
+# pf_alias / pf_owner (both empty when nothing matches) and pf_pattern (the raw
+# matched glob, for callers that want to detect a catch-all). Shared by
+# gitclone, gitinit and detect_identity's owner-drift check.
 match_profile() {
-  pf_alias=""; pf_owner=""
+  pf_alias=""; pf_owner=""; pf_pattern=""
   [[ -f "$PROFILES_FILE" ]] || return
   local check_path="$1" line
   local -a fields
@@ -76,12 +77,31 @@ match_profile() {
     [[ -z "$line" ]] && continue
     fields=( ${=line} )
     local pat="${fields[1]:-}" ali="${fields[2]:-}" own="${fields[3]:-}"
+    local raw="${fields[1]:-}"
     pat="${pat/#\~/$HOME}"
     [[ -z "$pat" || -z "$ali" ]] && continue
     case "$check_path" in
-      ${~pat}) pf_alias="$ali"; pf_owner="$own"; return ;;
+      ${~pat}) pf_alias="$ali"; pf_owner="$own"; pf_pattern="$raw"; return ;;
     esac
   done < "$PROFILES_FILE"
+}
+
+# Print the raw pattern (1st field) of the LAST rule in profiles, or empty.
+# By convention the catch-all rule is last, so callers compare a match's
+# pf_pattern against this to tell "matched only the catch-all."
+last_profile_pattern() {
+  [[ -f "$PROFILES_FILE" ]] || return
+  local line last=""
+  local -a fields
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%\#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+    fields=( ${=line} )
+    [[ -n "${fields[1]:-}" ]] && last="${fields[1]}"
+  done < "$PROFILES_FILE"
+  print -r -- "$last"
 }
 
 # Detect identity for a repo. Optional path arg (default ".").

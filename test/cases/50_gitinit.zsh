@@ -190,4 +190,17 @@ IDS
 
   describe "gitinit --owner needs a value → exit 2"
   assert_status "--owner with no value" 2 zsh "$gi" --owner
+
+  # --- resolve line + catch-all warning ---
+  describe "gitinit: warns when only the catch-all profile matches"
+  cat > "$h/.config/git-identity/profiles" <<PRO
+$h/proj/**   acme   acme-org
+$h/**        acme   fallback-owner
+PRO
+  local cao; cao=$( zsh "$gi" --no-create "$h/random/thing" 2>&1 )   # matches $h/** (last)
+  assert_contains "resolve line shown"   "$cao" "identity <acme>, owner fallback-owner"
+  assert_contains "catch-all warned"     "$cao" "only the catch-all"
+  assert_contains "suggests add-profile" "$cao" "git-identity --add-profile"
+  local spec; spec=$( zsh "$gi" --no-create "$h/proj/thing" 2>&1 )   # matches $h/proj/** (specific)
+  assert_not_contains "no warning for a specific rule" "$spec" "only the catch-all"
 }

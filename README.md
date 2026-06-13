@@ -180,6 +180,10 @@ Matched **top-to-bottom, first match wins** — put the catch-all last.
 the `owner` doubles as the **expected owner** for `git-identity`'s owner-drift
 check.
 
+Add a rule without hand-editing (and without the ordering footgun) via
+[`git-identity --add-profile`](#git-identity--check--fix); it inserts the rule
+above any broader rule that would otherwise shadow it.
+
 ### `ignore` — repos to skip during `--sweep`
 
 ```text
@@ -202,6 +206,13 @@ git-identity --sweep ~/Projects --fix        # interactive fix, repo by repo
 
 Other sweep flags: `--include-ignored` (revisit ignored repos), `--dry-run`
 (preview, write nothing), `--ignore-file PATH`, `--no-ignore`.
+
+Add a `profiles` rule with **`--add-profile`** (no hand-editing, no ordering
+footgun — it inserts the rule above any broader rule that would shadow it):
+
+```sh
+git-identity --add-profile '~/Projects/clientA/**' work clientA-org
+```
 
 In `--fix` mode each flagged repo offers context-aware actions — switch email to
 the canonical one, rewrite the remote host, convert HTTPS→SSH, **skip** (just
@@ -228,13 +239,20 @@ behaves exactly like `git clone`.
 ### `gitinit` — scaffold a new repo (and create it on GitHub)
 
 ```sh
-cd ~/Projects/personal && gitinit my-thing   # create on GitHub + push
-gitinit --profile personal my-thing           # no profile match? name the identity
+cd ~/Projects/personal && gitinit my-thing     # create ./my-thing on GitHub + push
+cd ~/Projects/personal/my-thing && gitinit     # init the CURRENT dir (no argument)
+gitinit --profile personal my-thing            # no profile match? name the identity
 gitinit --profile work --owner some-org thing  # ...and create it under some-org
 gitinit --public my-thing                      # public instead of private
 gitinit -s my-thing                            # main only (no test/develop)
 gitinit --no-remote /tmp/scratch               # local only, no origin
 ```
+
+> [!IMPORTANT]
+> `gitinit`'s argument is a **child directory to create**, not the current one.
+> `gitinit <name>` makes `./<name>`; **`gitinit` with no argument** inits the
+> directory you're already in. So inside `~/Projects/mailhub`, run `gitinit`
+> (not `gitinit mailhub`, which would nest `mailhub/mailhub`).
 
 For **new** repos (use `gitclone` for existing ones). Default flow:
 `git init -b main` → set `user.email` → `README.md` + initial commit → create

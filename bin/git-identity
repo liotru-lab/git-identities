@@ -29,8 +29,59 @@ Usage: git-identity [OPTIONS]
   --ignore-file PATH      Use a custom ignore file
                           (default: $DEFAULT_IGNORE_FILE)
   --no-ignore             Disable ignore filtering
+  --add-profile GLOB ALIAS [OWNER]
+                          Add a profiles rule, inserted so it takes effect
   -h, --help              This help
 EOF
+}
+
+# Add a rule to the profiles file. Validates the alias, refuses a duplicate
+# pattern, and inserts the rule BEFORE the first existing rule that would
+# already capture the path — so a new, more-specific rule wins instead of being
+# shadowed by a broader/catch-all rule.
+add_profile() {
+  local glob="$1" ali="$2" own="${3:-}" pf="$PROFILES_FILE"
+  [[ -n "$glob" && -n "$ali" ]] || {
+    echo "git-identity: --add-profile needs <glob> <alias> [owner]" >&2; return 2; }
+  [[ -n "$(alias_to_host "$ali")" ]] || {
+    echo "git-identity: unknown alias '$ali' (not in $IDENTITIES_FILE)" >&2; return 2; }
+
+  local -a lines ff; lines=()
+  [[ -f "$pf" ]] && lines=( "${(@f)$(<"$pf")}" )
+
+  local l s
+  for l in "${lines[@]}"; do
+    s="${l%%\#*}"; s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
+    [[ -z "$s" ]] && continue
+    ff=( ${=s} )
+    [[ "${ff[1]}" == "$glob" ]] && {
+      echo "git-identity: a rule for '$glob' already exists — edit $pf to change it" >&2; return 2; }
+  done
+
+  local newline
+  if [[ -n "$own" ]]; then newline="${glob}   ${ali}   ${own}"; else newline="${glob}   ${ali}"; fi
+
+  # Probe path the new glob governs (mirror match_profile: '*' matches '/').
+  local probe="${glob/#\~/$HOME}"
+  probe="${probe//\*\*/__giprobe__}"; probe="${probe//\*/__giprobe__}"
+
+  local -a out; out=(); local inserted=0 pat
+  for l in "${lines[@]}"; do
+    if (( ! inserted )); then
+      s="${l%%\#*}"; s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
+      if [[ -n "$s" ]]; then
+        ff=( ${=s} ); pat="${ff[1]/#\~/$HOME}"
+        [[ "$probe" == ${~pat} ]] && { out+=( "$newline" ); inserted=1; }
+      fi
+    fi
+    out+=( "$l" )
+  done
+  (( inserted )) || out+=( "$newline" )
+
+  mkdir -p "${pf:h}"
+  print -rl -- "${out[@]}" > "$pf.tmp" && mv "$pf.tmp" "$pf"
+  echo "git-identity: added profile → ${newline}"
+  echo "  verify the owner exists on GitHub with: git-identity-doctor --auth"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -51,6 +102,9 @@ while [[ $# -gt 0 ]]; do
     --ignore-file)     [[ $# -ge 2 ]] || { echo "git-identity: --ignore-file needs a PATH" >&2; exit 2; }
                        ignore_file="$2"; shift 2 ;;
     --no-ignore)       no_ignore=1; shift ;;
+    --add-profile)     [[ $# -ge 3 ]] || { echo "git-identity: --add-profile needs <glob> <alias> [owner]" >&2; exit 2; }
+                       ap_own="${4:-}"; [[ "$ap_own" == -* ]] && ap_own=""
+                       add_profile "$2" "$3" "$ap_own"; exit $? ;;
     -h|--help)         usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; usage >&2; exit 2 ;;
   esac

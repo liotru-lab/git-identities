@@ -70,7 +70,7 @@ done
 [[ -z "$url" ]] && { echo "gitclone: no URL found" >&2; exit 2; }
 
 # Resolve alias
-alias=""
+alias=""; alias_from_profile=0
 if [[ -n "$forced_alias" ]]; then
   alias="$forced_alias"; debug "alias from --profile: $alias"
 else
@@ -81,7 +81,7 @@ else
   fi
   if [[ -z "$alias" ]]; then
     match_profile "$(pwd)"
-    [[ -n "$pf_alias" ]] && { alias="$pf_alias"; debug "alias from profile: $alias"; }
+    [[ -n "$pf_alias" ]] && { alias="$pf_alias"; alias_from_profile=1; debug "alias from profile: $alias"; }
   fi
 fi
 
@@ -111,6 +111,13 @@ if (( url_idx + 1 <= ${#args[@]} )); then
   [[ "$next" != -* ]] && target_dir="$next"
 fi
 [[ -z "$target_dir" ]] && target_dir="${new_url:t:r}"
+
+# Flag when the identity came only from the catch-all profile (likely not what
+# you want for a fresh clone in this directory).
+if [[ $alias_from_profile -eq 1 && -n "$pf_pattern" && "$pf_pattern" == "$(last_profile_pattern)" ]]; then
+  print "gitclone: ⚠ only the catch-all profile ('$pf_pattern') matched ${PWD/#$HOME/~} — set a specific rule if this is wrong:"
+  print "          git-identity --add-profile '${PWD/#$HOME/~}/**' ${alias} <owner>"
+fi
 
 debug "running: git clone ${args[*]}"
 git clone "${args[@]}" || exit $?
