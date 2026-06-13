@@ -3,15 +3,14 @@
 [![tests](https://github.com/liotru-lab/git-identities/actions/workflows/test.yml/badge.svg)](https://github.com/liotru-lab/git-identities/actions/workflows/test.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> [!WARNING]
-> **Personal opinionated tooling, use at your own risk.**
+> [!NOTE]
+> **Personal, opinionated tooling.**
 >
 > This repo encodes **my** specific multi-account GitHub workflow and personal
-> preferences — it is shared as-is, **not** a general-purpose tool. The aliases,
-> the `main`/`test`/`develop` branch scaffold, the SSH-host naming scheme, the
-> directory→account conventions, and the entire starship prompt styling all
-> reflect **my own needs and views**. Nothing here is a recommendation.
-> **Fork it and adapt it. Do not expect it to fit your setup unchanged.**
+> preferences. The aliases, the `main`/`test`/`develop` branch scaffold, the
+> SSH-host naming scheme, the directory→account conventions, and the starship
+> prompt styling all reflect **my own needs**. It's shared in case it's useful —
+> if it doesn't fit you, take what's helpful, fork it, and make it your own.
 
 Per-repo git identity management for juggling multiple GitHub accounts on one
 machine. It keeps four things in agreement for every repository:
