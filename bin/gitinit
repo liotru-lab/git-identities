@@ -216,6 +216,15 @@ if [[ -z "$remote_url" ]]; then
   exit 2
 fi
 
+# Show what was resolved (so a wrong identity/owner is visible before pushing),
+# and flag when only the catch-all profile matched — the usual silent mistake.
+print "gitinit: identity <${alias}>, owner ${owner} → ${remote_url}"
+if [[ -z "$forced_alias$forced_owner$forced_remote_url" \
+      && -n "$pf_pattern" && "$pf_pattern" == "$(last_profile_pattern)" ]]; then
+  print "gitinit: ⚠ only the catch-all profile ('$pf_pattern') matched — set a specific rule if this is wrong:"
+  print "         git-identity --add-profile '${abs_target/#$HOME/~}/**' ${alias} ${owner}"
+fi
+
 # ----- Add origin + set tracking -----
 debug "git remote add origin $remote_url"
 git -C "$target_dir" remote add origin "$remote_url"

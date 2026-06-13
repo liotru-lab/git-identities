@@ -26,19 +26,42 @@ gitclone <url> [dir]
 
 ## Creating a new repo
 
-Use `gitinit` instead of `git init` — it scaffolds, sets identity, and (by
-default) creates the repo on GitHub and pushes:
+Use `gitinit` instead of `git init`. **Its argument is a child directory to
+create — not the current one:**
+
+- `gitinit` (no argument) → initialize the **current** directory as a new repo
+- `gitinit <name>` → create subdirectory `<name>` and init it (run from the parent)
+
+So to set up a folder you're already inside (e.g. `~/Projects/mailhub`), run
+`gitinit` with **no argument** — `gitinit mailhub` there would nest
+`mailhub/mailhub`.
+
+It scaffolds, sets identity, and (by default) creates the repo on GitHub and pushes:
 
 ```sh
-gitinit <dir>                      # create on GitHub + push (owner from profile/gh-user)
-gitinit --owner <org> <dir>        # create under a specific org
-gitinit -s <dir>                   # main only (skip test/develop scaffold)
-gitinit --no-create <dir>          # local scaffold + origin only, no GitHub
+gitinit                            # init the CURRENT dir (repo name = its basename)
+gitinit <name>                     # create ./<name> and init it
+gitinit --owner <org> <name>       # create under a specific org
+gitinit -s <name>                  # main only (skip test/develop scaffold)
+gitinit --no-create <name>         # local scaffold + origin only, no GitHub
 ```
 
-When there's no matching directory profile, name the identity with
-`--profile <alias>` (owner then defaults to that account's own namespace unless
-`--owner` is given).
+Owner resolves: `--owner` → the directory's profile → the alias's gh-user. With
+no matching profile, name the identity via `--profile <alias>`. `gitinit` prints
+the resolved identity/owner before creating and warns when only the catch-all
+profile matched.
+
+## Adding a directory profile
+
+A profile maps a directory glob to an identity + GitHub owner. Add one with:
+
+```sh
+git-identity --add-profile '~/Projects/<dir>/**' <alias> [owner]
+```
+
+It validates the alias and inserts the rule so it actually takes effect (above
+any broader/catch-all rule). Then `git-identity-doctor --auth` confirms the owner
+exists on GitHub.
 
 ## Checking / fixing a repo
 

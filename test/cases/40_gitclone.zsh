@@ -45,4 +45,18 @@ PRO
   # --profile as the last arg must not crash on `shift 2`.
   assert_status "--profile with no value → exit 2" 2 zsh "$gc" --profile
   assert_not_contains "no zsh shift crash" "$(zsh "$gc" --profile 2>&1)" "shift count must be"
+
+  describe "gitclone: warns when identity comes only from the catch-all profile"
+  cat > "$h/.config/git-identity/profiles" <<PRO
+$work/specific/**   globex   g-org
+$work/**            acme     a-org
+PRO
+  make_bare "$remotes" acme me/cat.git >/dev/null   # so the rewritten clone succeeds
+  mkdir -p "$work/here"
+  local cco; cco=$( cd "$work/here" && zsh "$gc" https://github.com/me/cat.git catdest 2>&1 )
+  assert_contains "catch-all warned"     "$cco" "only the catch-all"
+  assert_contains "suggests add-profile" "$cco" "git-identity --add-profile"
+  # ...but not when the URL host already determines the alias (no profile needed):
+  local hostc; hostc=$( cd "$work/here" && zsh "$gc" git@ssh-acme:owner/repo.git d2 2>&1 )
+  assert_not_contains "no warning when alias from URL host" "$hostc" "only the catch-all"
 }
