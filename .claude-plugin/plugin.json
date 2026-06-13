@@ -1,0 +1,10 @@
+{
+  "name": "git-identity",
+  "description": "Per-repo git identity for juggling multiple GitHub accounts: gitclone/gitinit wrappers and identity/owner checks, with a Claude skill so Claude reaches for them by default. Requires the CLI toolkit (install.sh) to be installed separately.",
+  "version": "1.0.0",
+  "author": { "name": "Luca Romano", "url": "https://github.com/liotru-lab" },
+  "homepage": "https://github.com/liotru-lab/git-identities",
+  "repository": "https://github.com/liotru-lab/git-identities",
+  "license": "MIT",
+  "keywords": ["git", "identity", "github", "multi-account", "ssh", "monorepo"]
+}
