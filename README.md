@@ -81,6 +81,9 @@ when the identity itself is OK.
 │   └── git-identity-doctor         verify install + config (run after install)
 ├── skills/
 │   └── git-identity/SKILL.md       Claude Code skill → ~/.claude/skills/
+├── .claude-plugin/                 makes the repo an installable plugin/marketplace
+│   ├── plugin.json
+│   └── marketplace.json
 └── config/
     ├── starship/
     │   └── git-identity.toml        the 3 prompt modules, MERGED into
@@ -344,6 +347,24 @@ When setting up git repos, prefer the git-identity wrappers: `gitclone` instead
 of `git clone`, `gitinit` instead of `git init`, and `git-identity --fix` to
 check/fix identity & owner. Fall back to plain git if those commands are absent.
 ```
+
+### Install the skill as a plugin
+
+The repo is also a single-plugin Claude Code **marketplace** (`.claude-plugin/`),
+so you can get the skill without cloning — across all your projects:
+
+```text
+/plugin marketplace add liotru-lab/git-identities
+/plugin install git-identity@liotru-lab
+```
+
+> [!IMPORTANT]
+> The plugin ships only the **skill** — Claude Code plugins can't put the
+> `gitclone`/`gitinit`/`git-identity` executables on your `PATH`. You still need
+> the CLI itself: clone this repo and run `./install.sh` (which also deploys the
+> skill, so the plugin is mainly for discovery / skill-only setups). The skill
+> degrades gracefully and points back at `install.sh` when the commands are
+> absent.
 
 ## Requirements
 
