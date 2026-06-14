@@ -80,9 +80,8 @@ when the identity itself is OK.
 │   └── git-identity-doctor         verify install + config (run after install)
 ├── skills/
 │   └── git-identity/SKILL.md       Claude Code skill → ~/.claude/skills/
-├── .claude-plugin/                 makes the repo an installable plugin/marketplace
-│   ├── plugin.json
-│   └── marketplace.json
+├── .claude-plugin/                 plugin manifest (listed in the liotru-lab marketplace)
+│   └── plugin.json
 └── config/
     ├── starship/
     │   └── git-identity.toml        the 3 prompt modules, MERGED into
@@ -349,11 +348,12 @@ check/fix identity & owner. Fall back to plain git if those commands are absent.
 
 ### Install the skill as a plugin
 
-The repo is also a single-plugin Claude Code **marketplace** (`.claude-plugin/`),
-so you can get the skill without cloning — across all your projects:
+This repo is a plugin in the shared **`liotru-lab`** Claude Code marketplace
+([liotru-lab/plugins](https://github.com/liotru-lab/plugins)), so you can get the
+skill without cloning — across all your projects:
 
 ```text
-/plugin marketplace add liotru-lab/git-identities
+/plugin marketplace add liotru-lab/plugins
 /plugin install git-identity@liotru-lab
 ```
 
