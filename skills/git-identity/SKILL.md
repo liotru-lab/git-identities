@@ -51,6 +51,13 @@ no matching profile, name the identity via `--profile <alias>`. `gitinit` prints
 the resolved identity/owner before creating and warns when only the catch-all
 profile matched.
 
+**Existing folder with files?** `gitinit` works on it too — run `gitinit` inside
+it, or `gitinit <name>` from the parent. It asks once before creating + pushing
+(skip with `-y`/`--yes`). If the folder has a `.gitignore`, your tracked files
+are committed; if not, only a README is committed and it tells you to add a
+`.gitignore` and commit your code yourself. A folder that's already a git repo is
+refused (use `git-identity` to fix its identity/owner instead).
+
 ## Adding a directory profile
 
 A profile maps a directory glob to an identity + GitHub owner. Add one with:

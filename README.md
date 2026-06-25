@@ -237,7 +237,7 @@ Resolves an alias (flag → URL host → `profiles` by `$PWD`), rewrites the URL
 the right SSH host (and HTTPS→SSH), clones, then sets `user.email`. No match →
 behaves exactly like `git clone`.
 
-### `gitinit` — scaffold a new repo (and create it on GitHub)
+### `gitinit` — scaffold a repo (new or existing folder) and create it on GitHub
 
 ```sh
 cd ~/Projects/personal && gitinit my-thing     # create ./my-thing on GitHub + push
@@ -255,7 +255,14 @@ gitinit --no-remote /tmp/scratch               # local only, no origin
 > directory you're already in. So inside `~/Projects/mailhub`, run `gitinit`
 > (not `gitinit mailhub`, which would nest `mailhub/mailhub`).
 
-For **new** repos (use `gitclone` for existing ones). Default flow:
+**Existing, non-empty folder?** `gitinit` adopts it (run `gitinit` inside it, or
+`gitinit <name>` from the parent). It asks once before creating + pushing
+(`-y`/`--yes` to skip). With a `.gitignore` your tracked files go into the initial
+commit; **without one only a README is committed** and `gitinit` tells you to add
+a `.gitignore` and commit your code yourself. A folder that's already a git repo
+is refused (use `git-identity` to fix its identity/owner instead).
+
+For new repos (and to adopt existing local folders). Default flow:
 `git init -b main` → set `user.email` → `README.md` + initial commit → create
 `test` and `develop` branches and switch to `develop` → add `origin`
 (`git@<host>:<owner>/<name>.git`) → **create the private GitHub repo via `gh` and
@@ -275,6 +282,7 @@ Flags:
 - **`--profile <alias>`** — force the identity instead of matching `profiles`.
 - **`-s`, `--simple`** — `main` only: no `test`/`develop`, stays on `main`, tracks
   and pushes only `main`. Composes with everything below.
+- **`-y`, `--yes`** — skip the confirmation prompt when adopting an existing folder.
 - **`--public`** — create a public repo (default: private).
 - **`--no-create`** — full local scaffold **including `origin`**, but don't create
   the GitHub repo or push (the remote already exists).

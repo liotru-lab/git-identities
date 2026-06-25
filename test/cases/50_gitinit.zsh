@@ -203,4 +203,48 @@ PRO
   assert_contains "suggests add-profile" "$cao" "git-identity --add-profile"
   local spec; spec=$( zsh "$gi" --no-create "$h/proj/thing" 2>&1 )   # matches $h/proj/** (specific)
   assert_not_contains "no warning for a specific rule" "$spec" "only the catch-all"
+
+  # --- existing-folder support ---
+  describe "gitinit: existing folder WITH a .gitignore commits its files"
+  local ex1; ex1=$(_mktemp_dir)
+  mkdir -p "$ex1/proj/src"; print code > "$ex1/proj/src/a.txt"; print node_modules > "$ex1/proj/.gitignore"
+  ( zsh "$gi" --profile acme --no-remote "$ex1/proj" >/dev/null 2>&1 )
+  assert_contains "tracks src/a.txt"  "$(git -C "$ex1/proj" ls-files)" "src/a.txt"
+  assert_contains "tracks .gitignore" "$(git -C "$ex1/proj" ls-files)" ".gitignore"
+
+  describe "gitinit: existing folder with NO .gitignore → README only + warning"
+  local ex2; ex2=$(_mktemp_dir)
+  mkdir -p "$ex2/proj/src"; print code > "$ex2/proj/src/b.txt"
+  local w2; w2=$( zsh "$gi" --profile acme --no-remote "$ex2/proj" 2>&1 )
+  assert_eq "only README committed" "README.md" "$(git -C "$ex2/proj" ls-files)"
+  assert_not_contains "code left untracked" "$(git -C "$ex2/proj" ls-files)" "src/b.txt"
+  assert_contains "warns about missing .gitignore" "$w2" "no .gitignore"
+
+  describe "gitinit: empty/new folder unchanged (README only, no prompt)"
+  local em; em=$(_mktemp_dir)
+  ( zsh "$gi" --profile acme --no-remote "$em/fresh" </dev/null >/dev/null 2>&1 )
+  assert_eq "README-only commit" "README.md" "$(git -C "$em/fresh" ls-files)"
+
+  describe "gitinit: refuses a folder that is already a git repo"
+  local rp; rp=$(_mktemp_dir); git init -q "$rp/repo"
+  assert_status "already-a-repo → exit 2" 2 zsh "$gi" --profile acme --no-remote "$rp/repo"
+  assert_contains "explains it's already a repo" \
+    "$(zsh "$gi" --profile acme --no-remote "$rp/repo" 2>&1)" "already a git repo"
+
+  describe "gitinit: existing-folder confirm — decline leaves it pristine"
+  local cf; cf=$(_mktemp_dir); mkdir -p "$cf/proj"; print x > "$cf/proj/f.txt"
+  local stubd; stubd=$(_mktemp_dir)/bin; make_gh_stub "$stubd"
+  printf 'n\n' | env PATH="$stubd:$PATH" zsh "$gi" --profile acme "$cf/proj" >/dev/null 2>&1
+  local dec=$?
+  assert_eq "decline → exit 1" "1" "$dec"
+  assert_no_file "decline leaves no .git" "$cf/proj/.git"
+  assert_no_file "decline made no gh call" "$stubd/gh-calls.log"
+
+  describe "gitinit: --yes skips the confirm (proceeds to commit)"
+  local yf; yf=$(_mktemp_dir); mkdir -p "$yf/proj"; print x > "$yf/proj/f.txt"
+  local stuby; stuby=$(_mktemp_dir)/bin; make_gh_stub "$stuby"
+  # No stdin: without --yes the prompt would read EOF and decline; --yes proceeds
+  # (gh create stubbed; push fails with no bare remote, but the commit is made).
+  ( env PATH="$stuby:$PATH" zsh "$gi" --profile acme --yes "$yf/proj" </dev/null >/dev/null 2>&1 )
+  assert_status "--yes proceeded to a commit (HEAD exists)" 0 git -C "$yf/proj" rev-parse --verify HEAD
 }
