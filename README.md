@@ -237,7 +237,7 @@ Resolves an alias (flag → URL host → `profiles` by `$PWD`), rewrites the URL
 the right SSH host (and HTTPS→SSH), clones, then sets `user.email`. No match →
 behaves exactly like `git clone`.
 
-### `gitinit` — scaffold a new repo (and create it on GitHub)
+### `gitinit` — scaffold a repo (new or existing folder) and create it on GitHub
 
 ```sh
 cd ~/Projects/personal && gitinit my-thing     # create ./my-thing on GitHub + push
