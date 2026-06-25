@@ -4,7 +4,7 @@
 #
 # Usage:
 #   gitinit [--profile <alias>] [--owner <org/user>] [--remote <url>] [--public]
-#           [-s|--simple] [--no-create] [--no-remote] [--no-branches]
+#           [-s|--simple] [-y|--yes] [--no-create] [--no-remote] [--no-branches]
 #           [git-init-flags...] [directory]
 #
 # Default flow:
@@ -17,6 +17,11 @@
 #
 # With -s/--simple steps 4-6 use main only: no test/develop branches, stay on
 # main, track origin/main, and push only main.
+#
+# In an existing, non-empty folder it creates + pushes the repo (asks once,
+# unless -y/--yes): with a .gitignore your tracked files are committed too;
+# without one only a README is, and your code is left for you to commit. A
+# folder that is already a git repo is refused.
 #
 # Creating the GitHub repo (step 6, on by default) needs a gh-user (4th
 # identities column) for the alias and that account authenticated in gh. The
@@ -37,6 +42,7 @@
 #   --owner <org/user>  create/push under this owner (else profile, else gh-user)
 #   -s, --simple   main only: skip the test/develop branches, stay on main,
 #                  track origin/main, push only main
+#   -y, --yes      skip the confirmation prompt when adopting an existing folder
 #   --no-create    do everything locally (incl. origin) but DON'T create the
 #                  GitHub repo or push — the old default for an existing remote
 #   --no-remote    skip remote setup entirely (no origin; implies --no-create)
@@ -54,12 +60,22 @@ source "$LIB"
 
 debug() { [[ "${GIT_IDENTITY_DEBUG:-}" == "1" ]] && echo "# gitinit: $*" >&2; return 0 }
 
+# Printed when an existing folder had no .gitignore, so only the README was
+# committed and the user's code was left for them to commit manually.
+adopt_warning() {
+  (( adopt_warn )) || return 0
+  print ""
+  print "gitinit: ⚠ no .gitignore — your existing files were NOT committed (README only)."
+  print "  add a .gitignore, then commit and push them:"
+  print "    git -C $target_dir add -A && git -C $target_dir commit -m \"add project files\" && git -C $target_dir push"
+}
+
 # match_profile (sets pf_alias / pf_owner) comes from lib.sh.
 
 # ----- Parse flags -----
 # create defaults ON: gitinit is for NEW repos (use gitclone for existing ones).
 forced_alias=""; forced_remote_url=""; forced_owner=""; no_remote=0; no_branches=0
-create=1; public=0; no_create=0; simple=0
+create=1; public=0; no_create=0; simple=0; assume_yes=0; adopt_warn=0
 typeset -a args
 args=()
 while [[ $# -gt 0 ]]; do
@@ -71,12 +87,13 @@ while [[ $# -gt 0 ]]; do
     --owner)        [[ $# -ge 2 ]] || { echo "gitinit: --owner needs an org/user" >&2; exit 2; }
                     forced_owner="$2"; shift 2 ;;
     -s|--simple)    simple=1; shift ;;
+    -y|--yes)       assume_yes=1; shift ;;
     --no-remote)    no_remote=1; shift ;;
     --no-branches)  no_branches=1; shift ;;
     --no-create)    no_create=1; shift ;;
     --public)       public=1; shift ;;
     -h|--help)
-      sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) args+=("$1"); shift ;;
@@ -136,6 +153,38 @@ elif [[ -z "$owner" && -n "$alias" ]]; then
 fi
 debug "alias=$alias owner=$owner"
 
+repo_name="${abs_target:t}"
+
+# Scope guard: gitinit is for NEW repos. Refuse a folder that's already a repo
+# (adopting an existing repo's history/remote is a separate flow).
+if [[ -e "$target_dir/.git" ]]; then
+  echo "gitinit: '$target_dir' is already a git repo — gitinit is for new repos." >&2
+  echo "         use 'git-identity --fix' for its identity/owner, or wire the remote manually." >&2
+  exit 2
+fi
+
+# Is this an existing, non-empty folder (vs. a fresh/empty one)?
+had_content=0
+[[ -d "$target_dir" && -n "$(ls -A -- "$target_dir" 2>/dev/null)" ]] && had_content=1
+
+# Turning an existing folder into a repo creates + pushes a GitHub repo — confirm
+# once (unless --yes). Skipped for empty/new folders and for local-only runs
+# (--no-create/--no-remote/--no-branches set create=0).
+if [[ $had_content -eq 1 && $create -eq 1 && $assume_yes -eq 0 ]]; then
+  if [[ -f "$target_dir/.gitignore" ]]; then
+    incl="its tracked files (respecting .gitignore)"
+  else
+    incl="a README only — your code is NOT committed (no .gitignore)"
+  fi
+  print "gitinit: create a repo for existing folder '${target_dir}' and push?"
+  print "  identity <${alias}>, owner ${owner} → ${repo_name}; initial commit: ${incl}"
+  read -r "reply?Proceed? [y/N] "
+  case "$reply" in
+    y|Y|yes|YES) ;;
+    *) echo "gitinit: cancelled — folder untouched" >&2; exit 1 ;;
+  esac
+fi
+
 # ----- Force -b main into init args if not already present -----
 has_b=0
 for arg in "${args[@]}"; do
@@ -169,13 +218,21 @@ if [[ $no_branches -eq 1 ]]; then
 fi
 
 # ----- README + initial commit -----
-repo_name="${abs_target:t}"
 readme="$target_dir/README.md"
 if [[ ! -f "$readme" ]]; then
   printf '# %s\n\n' "$repo_name" > "$readme"
   debug "created $readme"
 fi
-git -C "$target_dir" add README.md
+# An existing folder WITH a .gitignore gets its tracked files committed; without
+# one (or an empty/new folder) only the README goes in — and for an existing
+# folder we flag the skipped content afterward (adopt_warn).
+if [[ $had_content -eq 1 && -f "$target_dir/.gitignore" ]]; then
+  git -C "$target_dir" add -A
+  debug "staged all content (.gitignore present)"
+else
+  git -C "$target_dir" add README.md
+  [[ $had_content -eq 1 ]] && adopt_warn=1
+fi
 git -C "$target_dir" commit -m "initial commit" >/dev/null
 
 # ----- Branches -----
@@ -194,6 +251,7 @@ fi
 # ----- --no-remote: stop here -----
 if [[ $no_remote -eq 1 ]]; then
   debug "--no-remote: skipping remote setup"
+  adopt_warning
   exit 0
 fi
 
@@ -280,3 +338,5 @@ if [[ $create -eq 1 ]]; then
   fi
   debug "created and pushed ${create_owner}/${repo_name}"
 fi
+
+adopt_warning
