@@ -18,12 +18,14 @@
   # Profiles: declare an expected owner per area (one with a blank owner).
   cat > "$PROFILES_FILE" <<PRO
 $root/m/**     acme   acme-org
+$root/c/**     acme   acme-org
 $root/d/**     acme   acme-org
 $root/u/**     acme   acme-org
 $root/no/**    acme
 PRO
 
   mkrepo "$root/m/repo"  dev@acme.test  git@ssh-acme:acme-org/repo.git    # match
+  mkrepo "$root/c/repo"  dev@acme.test  git@ssh-acme:Acme-Org/repo.git    # match, diff case
   mkrepo "$root/d/repo"  dev@acme.test  git@ssh-acme:wrong-org/repo.git   # drift
   mkrepo "$root/u/repo"  dev@acme.test  git@ssh-acme:repo.git             # owner unparseable
   mkrepo "$root/no/repo" dev@acme.test  git@ssh-acme:anything/repo.git    # profile owner blank
@@ -42,6 +44,10 @@ PRO
   assert_eq "match → identity ok"      "ok"       "$ID_STATE"
   assert_eq "match → owner ok"         "ok"       "$ID_OWNER_STATE"
   assert_eq "expected owner resolved"  "acme-org" "$ID_EXPECTED_OWNER"
+
+  detect_identity "$root/c/repo"
+  assert_eq "owner case-insensitive → owner ok" "ok" "$ID_OWNER_STATE"
+  assert_eq "owner keeps actual casing"  "Acme-Org" "$ID_OWNER"
 
   detect_identity "$root/d/repo"
   assert_eq "drift → identity still ok" "ok"        "$ID_STATE"
