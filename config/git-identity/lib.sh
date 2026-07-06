@@ -142,9 +142,11 @@ detect_identity() {
     match_profile "$top"
     ID_EXPECTED_OWNER="$pf_owner"
   fi
+  # GitHub owner names are case-insensitive (github.com/Qnary == /qnary), so
+  # compare case-folded — only a genuinely different owner counts as drift.
   if [[ -n "$ID_EXPECTED_OWNER" && -n "$ID_REMOTE" ]]; then
-    if   [[ -z "$ID_OWNER" ]];                     then ID_OWNER_STATE=unknown
-    elif [[ "$ID_OWNER" != "$ID_EXPECTED_OWNER" ]]; then ID_OWNER_STATE=drift
+    if   [[ -z "$ID_OWNER" ]];                             then ID_OWNER_STATE=unknown
+    elif [[ "${(L)ID_OWNER}" != "${(L)ID_EXPECTED_OWNER}" ]]; then ID_OWNER_STATE=drift
     fi
   fi
 }
