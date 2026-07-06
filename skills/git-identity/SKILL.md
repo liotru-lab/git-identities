@@ -34,7 +34,8 @@ create — not the current one:**
 
 So to set up a folder you're already inside (e.g. `~/Projects/mailhub`), run
 `gitinit` with **no argument** — `gitinit mailhub` there would nest
-`mailhub/mailhub`.
+`mailhub/mailhub`. Passing a clone **URL** as the argument is refused (`gitinit`
+takes a folder name, not a URL — use `gitclone <url>` to clone).
 
 It scaffolds, sets identity, and (by default) creates the repo on GitHub and pushes:
 

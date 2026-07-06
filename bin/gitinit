@@ -126,6 +126,15 @@ for arg in "${args[@]}"; do
     *)  target_dir="$arg" ;;
   esac
 done
+# gitinit's argument is a folder name, not a clone URL. A URL-shaped arg would
+# create a directory literally named after the URL (and then confuse a later
+# `git clone`), so reject it and point at gitclone instead.
+case "$target_dir" in
+  *://*|*@*:*)
+    echo "gitinit: '$target_dir' looks like a URL — gitinit takes a folder name, not a clone URL." >&2
+    echo "         To clone an existing repo, use: gitclone $target_dir" >&2
+    exit 2 ;;
+esac
 [[ -z "$target_dir" ]] && target_dir="$(pwd)"
 abs_target="$target_dir"
 case "$abs_target" in
