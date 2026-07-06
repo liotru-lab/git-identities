@@ -51,6 +51,18 @@ PRO
   assert_status "--remote with no value → exit 2"  2 zsh "$gi" --remote
   assert_not_contains "no zsh shift crash" "$(zsh "$gi" --remote 2>&1)" "shift count must be"
 
+  describe "gitinit: URL-shaped arg is refused (use gitclone)"
+  # A clone URL passed where a folder name belongs must error, not create a
+  # directory literally named after the URL (which would then hijack git clone).
+  local d4; d4=$(_mktemp_dir)
+  assert_status "ssh URL arg → exit 2" 2 \
+    zsh "$gi" --no-create git@github.com:acme-org/proj.git
+  assert_status "https URL arg → exit 2" 2 \
+    zsh "$gi" --no-create https://github.com/acme-org/proj.git
+  assert_contains "points at gitclone" \
+    "$(cd "$d4" && zsh "$gi" --no-create git@github.com:acme-org/proj.git 2>&1)" "gitclone"
+  assert_no_file "no URL-named dir created" "$d4/git@github.com:acme-org/proj.git"
+
   # --- Default behavior: create the GitHub repo + push, with a stubbed gh and a
   #     local bare repo standing in for the remote (no network). ---
   local remotes; remotes=$(_mktemp_dir)
